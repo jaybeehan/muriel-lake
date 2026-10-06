@@ -31,7 +31,7 @@
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text);
          font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
+  main { max-width: 1440px; margin: 0 auto; padding: 24px 16px 48px; }
   header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 12px; margin-bottom: 18px; }
   h1 { font-size: 1.7rem; margin: 0; letter-spacing: -0.01em; }
   .sub { color: var(--muted); margin: 2px 0 0; }
@@ -72,6 +72,31 @@
   footer { color: var(--muted); font-size: .85rem; }
   footer a { color: var(--accent); }
   .error { color: var(--down); }
+  /* layout: main column + weather panel on the right (stacks under the summary on narrow screens) */
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 18px; }
+  .wx { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 18px; }
+  @media (min-width: 1100px) {
+    .layout { grid-template-columns: minmax(0, 1fr) 300px; }
+    .summary, .rest { grid-column: 1; }
+    .wx { grid-column: 2; grid-row: 1 / span 2; align-self: start; position: sticky; top: 16px; }
+  }
+  .wx h2 { margin-bottom: 2px; }
+  .wx h3 { font-size: .95rem; margin: 16px 0 6px; color: var(--muted); font-weight: 600; }
+  .wx-now { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+  .wx-icon { font-size: 2.6rem; line-height: 1; }
+  .wx-temp { font-size: 2.2rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .wx-cond { color: var(--muted); font-size: .9rem; }
+  .wx-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; margin-top: 12px; font-size: .88rem; }
+  .wx-facts div span { display: block; color: var(--muted); font-size: .78rem; }
+  .wx-facts div b { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .wx-days { list-style: none; margin: 0; padding: 0; }
+  .wx-days li { display: grid; grid-template-columns: 3.2em 1.6em 1fr auto; align-items: center; gap: 8px;
+                padding: 7px 0; border-bottom: 1px solid var(--line); font-size: .9rem; font-variant-numeric: tabular-nums; }
+  .wx-days li:last-child { border-bottom: 0; }
+  .wx-days .ic { font-size: 1.15rem; text-align: center; }
+  .wx-days .hl { white-space: nowrap; } .wx-days .lo { color: var(--muted); }
+  .wx-days .pp { color: var(--accent); font-size: .82rem; text-align: right; white-space: nowrap; }
+  .wx-src { color: var(--muted); font-size: .78rem; margin: 10px 0 0; }
 </style>
 </head>
 <body>
@@ -94,6 +119,8 @@
     </div>
   </header>
 
+  <div class="layout">
+  <div class="summary">
   <div class="daypick">
     <span>Summary for</span>
     <select id="pick-month" aria-label="Month"></select>
@@ -101,6 +128,16 @@
     <button id="pick-reset">Reset</button>
   </div>
   <div class="tiles" id="tiles"></div>
+  </div>
+
+  <aside class="wx" id="wx" aria-label="Weather forecast">
+    <h2>Weather at the lake</h2>
+    <p class="note" style="margin:0">Forecast for Muriel Lake, near Bonnyville</p>
+    <div id="wx-body"><p class="note" style="margin-top:12px">Loading forecast…</p></div>
+    <p class="wx-src">Forecast from <a href="https://open-meteo.com/">Open-Meteo</a>, refreshed each time the page loads.</p>
+  </aside>
+
+  <div class="rest">
 
   <section>
     <h2>Every day since 1981</h2>
@@ -144,6 +181,9 @@
     </details>
   </section>
 
+  </div>
+  </div>
+
   <footer id="footer"></footer>
 </main>
 
@@ -174,6 +214,68 @@
     document.querySelectorAll("[data-theme-btn]").forEach(b => b.classList.toggle("on", b.dataset.themeBtn === theme));
   }
   applyTheme();
+
+  // ---- weather forecast (live from Open-Meteo, independent of the lake data)
+  let WX = null, wxFailed = false;
+  const WX_CODES = {
+    0: ["Clear", "☀️"], 1: ["Mainly clear", "🌤️"], 2: ["Partly cloudy", "⛅"], 3: ["Cloudy", "☁️"],
+    45: ["Fog", "🌫️"], 48: ["Freezing fog", "🌫️"],
+    51: ["Light drizzle", "🌦️"], 53: ["Drizzle", "🌦️"], 55: ["Heavy drizzle", "🌧️"],
+    56: ["Freezing drizzle", "🌧️"], 57: ["Freezing drizzle", "🌧️"],
+    61: ["Light rain", "🌦️"], 63: ["Rain", "🌧️"], 65: ["Heavy rain", "🌧️"],
+    66: ["Freezing rain", "🌧️"], 67: ["Freezing rain", "🌧️"],
+    71: ["Light snow", "🌨️"], 73: ["Snow", "🌨️"], 75: ["Heavy snow", "❄️"], 77: ["Snow grains", "🌨️"],
+    80: ["Showers", "🌦️"], 81: ["Showers", "🌧️"], 82: ["Heavy showers", "🌧️"],
+    85: ["Snow showers", "🌨️"], 86: ["Heavy snow showers", "❄️"],
+    95: ["Thunderstorm", "⛈️"], 96: ["Thunderstorm, hail", "⛈️"], 99: ["Thunderstorm, hail", "⛈️"],
+  };
+  const wxc = (code, night) => {
+    const [t, ic] = WX_CODES[code] || ["—", "🌡️"];
+    return [t, night && (code === 0 || code === 1) ? "🌙" : ic];
+  };
+  const compass = (deg) => deg == null ? "" : ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][Math.round(deg / 45) % 8];
+  const precip = (mm) => mm == null ? "–" : metric() ? `${mm.toFixed(1)} mm` : `${(mm / 25.4).toFixed(2)} in`;
+  const deg = (c) => c == null ? "–" : `${Math.round(c)}°`;
+
+  const wxUrl = "https://api.open-meteo.com/v1/forecast?" + new URLSearchParams({
+    latitude: 54.1446, longitude: -110.744, timezone: "America/Edmonton", forecast_days: 7,
+    current: "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,is_day,wind_speed_10m,wind_direction_10m,wind_gusts_10m",
+    daily: "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max,wind_direction_10m_dominant",
+  });
+  const wxLoad = fetch(wxUrl).then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(j => { WX = j; }).catch(e => { console.error("forecast", e); wxFailed = true; });
+
+  function renderWx() {
+    const box = document.getElementById("wx-body");
+    if (wxFailed) { box.innerHTML = '<p class="note" style="margin-top:12px">Forecast unavailable right now.</p>'; return; }
+    if (!WX) return;
+    const c = WX.current, dl = WX.daily;
+    const [cond, icon] = wxc(c.weather_code, c.is_day === 0);
+    const dayName = (s, i) => i === 0 ? "Today" : i === 1 ? "Tmrw" :
+      new Date(s + "T12:00:00").toLocaleDateString("en-CA", { weekday: "short" });
+    box.innerHTML = `
+      <div class="wx-now">
+        <div class="wx-icon">${icon}</div>
+        <div><div class="wx-temp">${deg(c.temperature_2m)}C</div><div class="wx-cond">${cond} · feels like ${deg(c.apparent_temperature)}</div></div>
+      </div>
+      <div class="wx-facts">
+        <div><span>Today</span><b>${deg(dl.temperature_2m_max[0])} / ${deg(dl.temperature_2m_min[0])}</b></div>
+        <div><span>Chance of precip.</span><b>${dl.precipitation_probability_max[0] ?? "–"}%</b></div>
+        <div><span>Wind</span><b>${compass(c.wind_direction_10m)} ${Math.round(c.wind_speed_10m)} km/h</b></div>
+        <div><span>Gusts</span><b>${Math.round(c.wind_gusts_10m)} km/h</b></div>
+        <div><span>Precip. today</span><b>${precip(dl.precipitation_sum[0])}</b></div>
+        <div><span>Humidity</span><b>${c.relative_humidity_2m}%</b></div>
+      </div>
+      <h3>7-day forecast</h3>
+      <ul class="wx-days">${dl.time.map((t, i) => {
+        const [txt, ic] = wxc(dl.weather_code[i], false);
+        return `<li title="${txt}"><span>${dayName(t, i)}</span><span class="ic">${ic}</span>
+          <span class="hl">${deg(dl.temperature_2m_max[i])} <span class="lo">${deg(dl.temperature_2m_min[i])}</span></span>
+          <span class="pp">${dl.precipitation_probability_max[i] != null ? "💧" + dl.precipitation_probability_max[i] + "%" : ""}</span></li>`;
+      }).join("")}</ul>
+      <p class="wx-src" style="margin-top:6px">Updated ${new Date(c.time + ":00").toLocaleTimeString("en-CA", { hour: "numeric", minute: "2-digit" })} local time</p>`;
+  }
+  wxLoad.then(() => safe(renderWx));
 
   try {
     D = await (await fetch("data/lake.json", { cache: "no-cache" })).json();
@@ -404,7 +506,7 @@
     document.getElementById("u-metric").classList.toggle("on", metric());
     document.getElementById("u-imperial").classList.toggle("on", !metric());
     safe(tiles); safe(dailyChart, "chart-daily"); safe(quarterlyChart, "chart-quarterly"); safe(tabs);
-    safe(changeChart, "chart-change"); safe(projection, "chart-proj"); safe(footer);
+    safe(changeChart, "chart-change"); safe(projection, "chart-proj"); safe(footer); safe(renderWx);
   }
   for (const [id, u] of [["u-metric", "metric"], ["u-imperial", "imperial"]]) {
     document.getElementById(id).addEventListener("click", () => { units = u; localSet("units", u); renderAll(); });
