@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Muriel Lake Water Levels</title>
+<meta name="description" content="Water levels for Muriel Lake, Alberta (station 06AC007), updated weekly from Environment Canada.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M2 20c4-3 8 3 14 0s10 3 14 0v10H2z' fill='%232f6fb3'/%3E%3C/svg%3E">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.35.2/plotly.min.js"></script>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --text: #1d2430; --muted: #5d6878; --line: #e2e6ec;
+    --accent: #2f6fb3; --accent-soft: #e5eef8; --up: #1e7b3c; --up-bg: #dcf1e2; --down: #b8561c;
+    --interp: #8a94a3;
+    --s1: #2f6fb3; --s2: #d9822b; --s3: #2e9a5b; --s4: #8b5cc4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12161c; --card: #1b2129; --text: #e6eaf0; --muted: #9aa5b4; --line: #2c3440;
+      --accent: #6ea8e8; --accent-soft: #1f2d3d; --up: #6fd396; --up-bg: #1d3a28; --down: #f0a066;
+      --interp: #7b8696;
+      --s1: #6ea8e8; --s2: #f0a066; --s3: #6fd396; --s4: #b99af0;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
+  header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 12px; margin-bottom: 18px; }
+  h1 { font-size: 1.7rem; margin: 0; letter-spacing: -0.01em; }
+  .sub { color: var(--muted); margin: 2px 0 0; }
+  h2 { font-size: 1.15rem; margin: 0 0 4px; }
+  .note { color: var(--muted); font-size: .9rem; margin: 0 0 12px; }
+  .toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; background: var(--card); }
+  .toggle button { border: 0; background: none; color: var(--muted); padding: 7px 16px; font: inherit; cursor: pointer; }
+  .toggle button.on { background: var(--accent); color: #fff; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 18px; }
+  .tile { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+  .tile .k { color: var(--muted); font-size: .85rem; }
+  .tile .v { font-size: 1.6rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .tile .d { color: var(--muted); font-size: .85rem; }
+  .up { color: var(--up); } .down { color: var(--down); }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px; margin-bottom: 18px; }
+  .chart { width: 100%; height: 380px; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
+  .tabs button { border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 8px;
+                 padding: 6px 12px; font: inherit; cursor: pointer; }
+  .tabs button.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .scroll { overflow-x: auto; max-height: 420px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; font-size: .92rem; }
+  th, td { padding: 6px 10px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  thead th { position: sticky; top: 0; background: var(--card); color: var(--muted); font-weight: 600; }
+  td.interp { color: var(--interp); font-style: italic; }
+  td.rise { background: var(--up-bg); color: var(--up); font-weight: 650; }
+  tr.hl td { background: var(--accent-soft); font-weight: 600; }
+  details summary { cursor: pointer; color: var(--accent); margin: 10px 0; }
+  .grid2 { display: grid; grid-template-columns: 1fr; gap: 16px; }
+  @media (min-width: 900px) { .grid2 { grid-template-columns: 1fr 1fr; } }
+  footer { color: var(--muted); font-size: .85rem; }
+  footer a { color: var(--accent); }
+  .error { color: var(--down); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>Muriel Lake water levels</h1>
+      <p class="sub" id="subtitle">Station 06AC007 · near Gurneyville, Alberta</p>
+    </div>
+    <div class="toggle" role="group" aria-label="Units">
+      <button id="u-metric" class="on">Metric</button>
+      <button id="u-imperial">Inches</button>
+    </div>
+  </header>
+
+  <div class="tiles" id="tiles"></div>
+
+  <section>
+    <h2>Every day since 1981</h2>
+    <p class="note" id="daily-note"></p>
+    <div id="chart-daily" class="chart"></div>
+  </section>
+
+  <section>
+    <h2>Jan 1, Apr 1, Jul 1 and Oct 1 each year</h2>
+    <p class="note" id="q-note"></p>
+    <div id="chart-quarterly" class="chart"></div>
+    <details>
+      <summary>Show table</summary>
+      <div class="scroll"><table id="table-quarterly"></table></div>
+      <p class="note">Grey italic values were interpolated between the nearest readings (no measurement on that exact day).</p>
+    </details>
+  </section>
+
+  <section>
+    <h2>Change over time</h2>
+    <p class="note">Line: total change since the first reading for that date. Bars: change from the same date the year before. Green = the lake rose.</p>
+    <div class="tabs" id="change-tabs"></div>
+    <div id="chart-change" class="chart"></div>
+    <details>
+      <summary>Show year-to-year table</summary>
+      <div class="scroll"><table id="table-change"></table></div>
+    </details>
+  </section>
+
+  <section>
+    <h2>July 1 projection</h2>
+    <p class="note" id="proj-note"></p>
+    <div class="grid2">
+      <div class="scroll" style="max-height:none"><table id="table-scen"></table></div>
+      <div id="chart-proj" class="chart"></div>
+    </div>
+    <details>
+      <summary>Show 50-year projection table</summary>
+      <p class="note">Three straight-line ways to extend the record. They disagree on purpose: the lake fell for 35 years, then wet years pushed it back up, so the answer depends on how much history you trust. Treat these as “if the recent pattern continued.”</p>
+      <div class="scroll"><table id="table-long"></table></div>
+    </details>
+  </section>
+
+  <footer id="footer"></footer>
+</main>
+
+<script>
+(async function () {
+  const IN_PER_M = 100 / 2.54;
+  let D, units = localGet("units") || "metric";
+
+  function localGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function localSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+  const metric = () => units === "metric";
+
+  // level differences (stored in metres or cm) -> display
+  const lvl = (m) => m == null ? null : (metric() ? +m.toFixed(3) : +(m * IN_PER_M).toFixed(1));
+  const chg = (cm) => cm == null ? null : (metric() ? cm : +(cm / 2.54).toFixed(1));
+  const lvlUnit = () => metric() ? "m" : "in";
+  const chgUnit = () => metric() ? "cm" : "in";
+  const fmtLvl = (m) => m == null ? "" : (metric() ? lvl(m).toFixed(3) : lvl(m).toFixed(1));
+  const fmtChg = (cm) => cm == null ? "" : (chg(cm) > 0 ? "+" : "") + chg(cm).toFixed(1);
+  const fmtDate = (s) => new Date(s + "T12:00:00").toLocaleDateString("en-CA", { year: "numeric", month: "short", day: "numeric" });
+
+  try {
+    D = await (await fetch("data/lake.json", { cache: "no-cache" })).json();
+  } catch (e) {
+    document.querySelector("main").insertAdjacentHTML("afterbegin", '<p class="error">Could not load the data file.</p>');
+    return;
+  }
+
+  const Q = D.quarterly, QN = D.quarter_names;
+  let changeIdx = 2; // Jul 1 by default
+
+  function layout(extra) {
+    const grid = css("--line"), text = css("--text"), muted = css("--muted");
+    return Object.assign({
+      margin: { l: 60, r: 20, t: 10, b: 40 },
+      paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+      font: { family: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif", color: text, size: 12 },
+      xaxis: { gridcolor: grid, linecolor: grid, tickfont: { color: muted } },
+      yaxis: { gridcolor: grid, zerolinecolor: muted, tickfont: { color: muted } },
+      legend: { orientation: "h", y: -0.15 },
+      hovermode: "x unified",
+    }, extra || {});
+  }
+  const cfg = { displaylogo: false, responsive: true, modeBarButtonsToRemove: ["lasso2d", "select2d", "autoScale2d"] };
+  const seriesColors = () => [css("--s1"), css("--s2"), css("--s3"), css("--s4")];
+
+  function tiles() {
+    const last = Q[Q.length - 1];
+    const ci = Math.max(...last.level.map((v, j) => v !== null ? j : -1)); // latest quarterly date with a value
+    const yoy = last.yoy_cm[ci], tot = last.total_cm[ci];
+    const typical = D.projection.scenarios.find(s => s.percentile === 50);
+    const cls = (v) => v > 0 ? "up" : v < 0 ? "down" : "";
+    document.getElementById("tiles").innerHTML = `
+      <div class="tile"><div class="k">Latest reading</div>
+        <div class="v">${metric() ? D.latest.level.toFixed(3) + " m" : (D.latest.level / 0.3048).toLocaleString("en-CA", { maximumFractionDigits: 1 }) + " ft"}</div>
+        <div class="d">${fmtDate(D.latest.date)} · elevation above sea level${D.latest.source === "provisional" ? " · provisional" : ""}</div></div>
+      <div class="tile"><div class="k">${QN[ci]}, ${last.year} vs a year earlier</div>
+        <div class="v ${cls(yoy)}">${fmtChg(yoy)} ${chgUnit()}</div>
+        <div class="d">${yoy > 0 ? "The lake rose" : "The lake fell"}</div></div>
+      <div class="tile"><div class="k">${QN[ci]}, ${last.year} vs first ${QN[ci]} on record</div>
+        <div class="v ${cls(tot)}">${fmtChg(tot)} ${chgUnit()}</div>
+        <div class="d">Record starts ${Q.find(q => q.level[ci] !== null).year}</div></div>
+      <div class="tile"><div class="k">Typical outlook, July 1, ${D.projection.target.slice(0, 4)}</div>
+        <div class="v">${fmtChg(typical.vs_last_jul_cm)} ${chgUnit()}</div>
+        <div class="d">vs July 1, ${D.projection.last_july.year} (range ${fmtChg(D.projection.scenarios[1].vs_last_jul_cm)} to ${fmtChg(D.projection.scenarios[5].vs_last_jul_cm)})</div></div>`;
+  }
+
+  function dailyChart() {
+    const d = D.daily;
+    document.getElementById("daily-note").textContent =
+      `Level compared with the first reading (${fmtDate(d.base_date)}). Drag to zoom; double-click to reset.`;
+    Plotly.react("chart-daily", [{
+      x: d.dates, y: d.rel_m.map(lvl), type: "scattergl", mode: "lines",
+      line: { color: css("--s1"), width: 1.6 }, name: "Level",
+      hovertemplate: `%{y:${metric() ? ".3f" : ".1f"}} ${lvlUnit()}<extra></extra>`,
+    }], layout({ yaxis: Object.assign(layout().yaxis, { title: `Change (${lvlUnit()})` }), showlegend: false }), cfg);
+  }
+
+  function quarterlyChart() {
+    const base = D.quarterly_base;
+    document.getElementById("q-note").textContent = `Compared with the first quarterly reading (${fmtDate(base.date)}).`;
+    const yrs = Q.map(q => q.year), cols = seriesColors();
+    Plotly.react("chart-quarterly", QN.map((n, c) => ({
+      x: yrs, y: Q.map(q => q.level[c] === null ? null : lvl(q.level[c] - base.level)),
+      name: n, mode: "lines+markers", line: { color: cols[c], width: 2 }, marker: { size: 4 },
+      hovertemplate: `${n}: %{y:${metric() ? ".3f" : ".1f"}} ${lvlUnit()}<extra></extra>`,
+    })), layout({ yaxis: Object.assign(layout().yaxis, { title: `Change (${lvlUnit()})` }) }), cfg);
+
+    const head = `<thead><tr><th>Year</th>${QN.map(n => `<th>${n} (${lvlUnit()})</th>`).join("")}</tr></thead>`;
+    const body = [...Q].reverse().map(q => `<tr><td>${q.year}</td>${q.level.map((v, c) =>
+      `<td class="${q.source[c] === "interpolated" ? "interp" : ""}" title="${q.source[c] || ""}">${v === null ? "" : fmtLvl(v - base.level)}</td>`).join("")}</tr>`).join("");
+    document.getElementById("table-quarterly").innerHTML = head + `<tbody>${body}</tbody>`;
+  }
+
+  function changeChart() {
+    const c = changeIdx, yrs = Q.map(q => q.year);
+    const yoy = Q.map(q => chg(q.yoy_cm[c]));
+    Plotly.react("chart-change", [
+      { x: yrs, y: yoy, type: "bar", name: "vs previous year", yaxis: "y2",
+        marker: { color: yoy.map(v => v > 0 ? css("--up") : css("--down")), opacity: 0.75 },
+        hovertemplate: `vs year before: %{y:+.1f} ${chgUnit()}<extra></extra>` },
+      { x: yrs, y: Q.map(q => chg(q.total_cm[c])), type: "scatter", mode: "lines+markers", name: "Total change",
+        line: { color: css("--s1"), width: 3 }, marker: { size: 4 },
+        hovertemplate: `Total: %{y:+.1f} ${chgUnit()}<extra></extra>` },
+    ], layout({
+      yaxis: Object.assign(layout().yaxis, { title: `Total change (${chgUnit()})` }),
+      yaxis2: { title: `Year-to-year (${chgUnit()})`, overlaying: "y", side: "right", showgrid: false,
+                zerolinecolor: css("--muted"), tickfont: { color: css("--muted") } },
+      margin: { l: 60, r: 60, t: 10, b: 40 },
+    }), cfg);
+
+    const head = `<thead><tr><th>Year</th>${QN.map(n => `<th>${n} (${chgUnit()})</th>`).join("")}</tr></thead>`;
+    const body = [...Q].reverse().map(q => `<tr><td>${q.year}</td>${q.yoy_cm.map(v =>
+      `<td class="${v > 0 ? "rise" : ""}">${fmtChg(v)}</td>`).join("")}</tr>`).join("");
+    document.getElementById("table-change").innerHTML = head + `<tbody>${body}</tbody>`;
+  }
+
+  function projection() {
+    const P = D.projection, base = D.quarterly_base.level;
+    document.getElementById("proj-note").textContent =
+      `Starting from the ${fmtDate(P.anchor.date)} reading, this adds how much the lake changed between that date and the next July 1 in each of ${P.years_of_history} past years. It’s statistics from past years, not a weather forecast; winter snowpack matters most.`;
+    document.getElementById("table-scen").innerHTML =
+      `<thead><tr><th>July 1, ${P.target.slice(0, 4)}</th><th>Percentile</th><th>vs ${fmtDate(P.anchor.date)} (${chgUnit()})</th><th>vs July 1, ${P.last_july.year} (${chgUnit()})</th></tr></thead><tbody>` +
+      P.scenarios.map(s => `<tr class="${s.percentile === 50 ? "hl" : ""}"><td>${s.name}</td><td>${s.percentile}%</td><td>${fmtChg(s.change_cm)}</td><td>${fmtChg(s.vs_last_jul_cm)}</td></tr>`).join("") + "</tbody>";
+
+    const jul = Q.filter(q => q.level[2] !== null);
+    const rel = (m) => lvl(m - base);
+    const LT = P.long_term;
+    const lastY = P.last_july.year, lastV = P.last_july.level;
+    const join = (key) => ({ x: [lastY, ...LT.map(r => r.year)], y: [rel(lastV), ...LT.map(r => rel(r[key]))] });
+    const typ = P.scenarios.find(s => s.percentile === 50), dry = P.scenarios[1], wet = P.scenarios[5];
+    const ty = +P.target.slice(0, 4);
+    const fmt = metric() ? ".3f" : ".1f";
+    Plotly.react("chart-proj", [
+      { x: jul.map(q => q.year), y: jul.map(q => rel(q.level[2])), name: "Actual July 1", mode: "lines+markers",
+        line: { color: css("--s1"), width: 3 }, marker: { size: 4 }, hovertemplate: `Actual: %{y:${fmt}} ${lvlUnit()}<extra></extra>` },
+      Object.assign(join("trend_10"), { name: "Trend, last 10 yrs", mode: "lines", line: { color: css("--s4"), dash: "dash", width: 2 },
+        hovertemplate: `10-yr trend: %{y:${fmt}} ${lvlUnit()}<extra></extra>` }),
+      Object.assign(join("typical"), { name: "Typical yearly change", mode: "lines", line: { color: css("--muted"), dash: "dash", width: 2 },
+        hovertemplate: `Typical change: %{y:${fmt}} ${lvlUnit()}<extra></extra>` }),
+      { x: [ty], y: [rel(typ.level)], name: `Next July 1 (dry–wet range)`, mode: "markers",
+        marker: { color: css("--s3"), size: 10, symbol: "diamond" },
+        error_y: { type: "data", symmetric: false, array: [rel(wet.level) - rel(typ.level)], arrayminus: [rel(typ.level) - rel(dry.level)], color: css("--s3") },
+        hovertemplate: `Typical: %{y:${fmt}} ${lvlUnit()}<extra></extra>` },
+    ], layout({ yaxis: Object.assign(layout().yaxis, { title: `vs ${fmtDate(D.quarterly_base.date)} (${lvlUnit()})` }) }), cfg);
+
+    document.getElementById("table-long").innerHTML =
+      `<thead><tr><th>July 1</th><th>Trend, all years (${lvlUnit()})</th><th>Trend, last 10 yrs (${lvlUnit()})</th><th>Typical yearly change (${lvlUnit()})</th></tr></thead><tbody>` +
+      LT.map(r => `<tr><td>${r.year}</td><td>${fmtLvl(r.trend_all - base)}</td><td>${fmtLvl(r.trend_10 - base)}</td><td>${fmtLvl(r.typical - base)}</td></tr>`).join("") +
+      `</tbody>`;
+  }
+
+  function footer() {
+    document.getElementById("footer").innerHTML =
+      `Data: Environment and Climate Change Canada, Water Survey of Canada station ${D.station} (${D.station_name}). ` +
+      `Approved historical data (<a href="https://api.weather.gc.ca/collections/hydrometric-daily-mean">HYDAT</a>) through ${fmtDate(D.approved_until)}; ` +
+      `after that, provisional <a href="https://wateroffice.ec.gc.ca/report/real_time_e.html?stn=${D.station}">real-time data</a>, which may still be revised. ` +
+      `Gaps are filled by linear interpolation. Updated weekly · last updated ${new Date(D.updated).toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" })}`;
+  }
+
+  function tabs() {
+    document.getElementById("change-tabs").innerHTML = QN.map((n, i) =>
+      `<button data-i="${i}" class="${i === changeIdx ? "on" : ""}">${n}</button>`).join("");
+  }
+  document.getElementById("change-tabs").addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    changeIdx = +b.dataset.i; tabs(); changeChart();
+  });
+
+  function renderAll() {
+    document.getElementById("u-metric").classList.toggle("on", metric());
+    document.getElementById("u-imperial").classList.toggle("on", !metric());
+    tiles(); dailyChart(); quarterlyChart(); tabs(); changeChart(); projection(); footer();
+  }
+  for (const [id, u] of [["u-metric", "metric"], ["u-imperial", "imperial"]]) {
+    document.getElementById(id).addEventListener("click", () => { units = u; localSet("units", u); renderAll(); });
+  }
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", renderAll);
+  renderAll();
+})();
+</script>
+</body>
+</html>
