@@ -14,14 +14,6 @@
     --interp: #8a94a3;
     --s1: #2f6fb3; --s2: #d9822b; --s3: #2e9a5b; --s4: #8b5cc4;
   }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      --bg: #12161c; --card: #1b2129; --text: #e6eaf0; --muted: #9aa5b4; --line: #2c3440;
-      --accent: #6ea8e8; --accent-soft: #1f2d3d; --up: #6fd396; --up-bg: #1d3a28; --down: #f0a066;
-      --interp: #7b8696;
-      --s1: #6ea8e8; --s2: #f0a066; --s3: #6fd396; --s4: #b99af0;
-    }
-  }
   :root[data-theme="dark"] {
     --bg: #12161c; --card: #1b2129; --text: #e6eaf0; --muted: #9aa5b4; --line: #2c3440;
     --accent: #6ea8e8; --accent-soft: #1f2d3d; --up: #6fd396; --up-bg: #1d3a28; --down: #f0a066;
@@ -72,9 +64,21 @@
   footer { color: var(--muted); font-size: .85rem; }
   footer a { color: var(--accent); }
   .error { color: var(--down); }
+  .showrow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 0 10px; color: var(--muted); font-size: .9rem; }
+  .showrow button { border: 1px solid var(--line); background: var(--card); color: var(--muted); border-radius: 999px;
+                    padding: 4px 12px; font: inherit; cursor: pointer; }
+  .showrow button.on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+  .showrow button.on::before { content: "✓ "; }
+  th.sel, td.sel { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .download { text-align: center; margin: 24px 0 8px; }
+  .download a { display: inline-block; background: var(--accent); color: #fff; text-decoration: none; font-weight: 600;
+                padding: 10px 20px; border-radius: 10px; }
+  .download a:hover { filter: brightness(1.08); }
+  .download p { color: var(--muted); font-size: .85rem; margin: 8px 0 0; }
   /* layout: main column + weather panel on the right (stacks under the summary on narrow screens) */
   .layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 18px; }
   .wx { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 18px; }
+  .summary { order: 0; } .rest { order: 1; } .wx { order: 2; }   /* phones: weather after everything else */
   @media (min-width: 1100px) {
     .layout { grid-template-columns: minmax(0, 1fr) 300px; }
     .summary, .rest { grid-column: 1; }
@@ -112,7 +116,6 @@
         <button id="u-imperial">Inches</button>
       </div>
       <div class="toggle" role="group" aria-label="Theme">
-        <button data-theme-btn="auto">Auto</button>
         <button data-theme-btn="light">Light</button>
         <button data-theme-btn="dark">Dark</button>
       </div>
@@ -146,24 +149,18 @@
   </section>
 
   <section>
-    <h2>Jan 1, Apr 1, Jul 1 and Oct 1 each year</h2>
-    <p class="note" id="q-note"></p>
-    <div id="chart-quarterly" class="chart"></div>
-    <details>
-      <summary>Show table</summary>
-      <div class="scroll"><table id="table-quarterly"></table></div>
-      <p class="note">Grey italic values were interpolated between the nearest readings (no measurement on that exact day).</p>
-    </details>
-  </section>
-
-  <section>
-    <h2>Change over time</h2>
-    <p class="note">Line: total change since the first reading for that date. Bars: change from the same date the year before. Green = the lake rose.</p>
+    <h2>Change over time, on the 1st of each month</h2>
+    <p class="note" id="change-note"></p>
     <div class="tabs" id="change-tabs"></div>
+    <div class="showrow">Show:
+      <button id="show-total" class="on">Total change (line)</button>
+      <button id="show-yoy" class="on">Change vs year before (bars)</button>
+    </div>
     <div id="chart-change" class="chart"></div>
     <details>
-      <summary>Show year-to-year table</summary>
+      <summary>Show year-to-year table (all months)</summary>
       <div class="scroll"><table id="table-change"></table></div>
+      <p class="note">Change from the same date the year before. Green = the lake rose. Grey italic = no reading that exact day (interpolated).</p>
     </details>
   </section>
 
@@ -185,6 +182,11 @@
   </div>
 
   <footer id="footer"></footer>
+
+  <div class="download">
+    <a href="data/muriel-lake-water-levels.xlsx" download>Download all data (Excel)</a>
+    <p>Every daily reading, the 1st-of-month table, year-to-year and total changes (cm and inches), and the July 1 projection.</p>
+  </div>
 </main>
 
 <script>
@@ -206,11 +208,12 @@
   const fmtChg = (cm) => cm == null ? "" : (chg(cm) > 0 ? "+" : "") + chg(cm).toFixed(1);
   const fmtDate = (s) => new Date(s + "T12:00:00").toLocaleDateString("en-CA", { year: "numeric", month: "short", day: "numeric" });
 
-  // ---- theme: auto (follow the device), light or dark
-  let theme = localGet("theme") || "auto";
+  // ---- theme: light or dark (first visit follows the device, then your choice is remembered)
+  let theme = localGet("theme");
+  if (theme !== "light" && theme !== "dark")
+    theme = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   function applyTheme() {
-    if (theme === "auto") delete document.documentElement.dataset.theme;
-    else document.documentElement.dataset.theme = theme;
+    document.documentElement.dataset.theme = theme;
     document.querySelectorAll("[data-theme-btn]").forEach(b => b.classList.toggle("on", b.dataset.themeBtn === theme));
   }
   applyTheme();
@@ -285,7 +288,9 @@
   }
 
   const Q = D.quarterly, QN = D.quarter_names;
-  let changeIdx = 2; // Jul 1 by default
+  const MN = D.month_names, MQ = D.monthly;
+  let changeIdx = new Date().getMonth();          // current month by default
+  let showTotal = true, showYoy = true;
 
   function layout(extra) {
     const grid = css("--line"), text = css("--text"), muted = css("--muted");
@@ -404,42 +409,33 @@
     }], layout({ yaxis: Object.assign(layout().yaxis, { title: `Change (${lvlUnit()})` }), showlegend: false }), cfg);
   }
 
-  function quarterlyChart() {
-    const base = D.quarterly_base;
-    document.getElementById("q-note").textContent = `Compared with the first quarterly reading (${fmtDate(base.date)}).`;
-    const yrs = Q.map(q => q.year), cols = seriesColors();
-    Plotly.react("chart-quarterly", QN.map((n, c) => ({
-      x: yrs, y: Q.map(q => q.level[c] === null ? null : lvl(q.level[c] - base.level)),
-      name: n, mode: "lines+markers", line: { color: cols[c], width: 2 }, marker: { size: 4 },
-      hovertemplate: `${n}: %{y:${metric() ? ".3f" : ".1f"}} ${lvlUnit()}<extra></extra>`,
-    })), layout({ yaxis: Object.assign(layout().yaxis, { title: `Change (${lvlUnit()})` }) }), cfg);
-
-    const head = `<thead><tr><th>Year</th>${QN.map(n => `<th>${n} (${lvlUnit()})</th>`).join("")}</tr></thead>`;
-    const body = [...Q].reverse().map(q => `<tr><td>${q.year}</td>${q.level.map((v, c) =>
-      `<td class="${q.source[c] === "interpolated" ? "interp" : ""}" title="${q.source[c] || ""}">${v === null ? "" : fmtLvl(v - base.level)}</td>`).join("")}</tr>`).join("");
-    document.getElementById("table-quarterly").innerHTML = head + `<tbody>${body}</tbody>`;
-  }
-
   function changeChart() {
-    const c = changeIdx, yrs = Q.map(q => q.year);
-    const yoy = Q.map(q => chg(q.yoy_cm[c]));
-    Plotly.react("chart-change", [
-      { x: yrs, y: yoy, type: "bar", name: "vs previous year", yaxis: "y2",
-        marker: { color: yoy.map(v => v > 0 ? css("--up") : css("--down")), opacity: 0.75 },
-        hovertemplate: `vs year before: %{y:+.1f} ${chgUnit()}<extra></extra>` },
-      { x: yrs, y: Q.map(q => chg(q.total_cm[c])), type: "scatter", mode: "lines+markers", name: "Total change",
-        line: { color: css("--s1"), width: 3 }, marker: { size: 4 },
-        hovertemplate: `Total: %{y:+.1f} ${chgUnit()}<extra></extra>` },
-    ], layout({
-      yaxis: Object.assign(layout().yaxis, { title: `Total change (${chgUnit()})` }),
-      yaxis2: { title: `Year-to-year (${chgUnit()})`, overlaying: "y", side: "right", showgrid: false,
-                zerolinecolor: css("--muted"), tickfont: { color: css("--muted") } },
-      margin: { l: 60, r: 60, t: 10, b: 40 },
-    }), cfg);
+    const c = changeIdx, yrs = MQ.map(q => q.year);
+    const firstYear = (MQ.find(q => q.level[c] !== null) || {}).year;
+    document.getElementById("change-note").textContent =
+      `${MN[c]} 1 each year. Line: total change since the first ${MN[c]} 1 on record (${firstYear}). ` +
+      `Bars: change from ${MN[c]} 1 the year before; green = the lake rose.`;
+    const yoy = MQ.map(q => chg(q.yoy_cm[c]));
+    const both = showTotal && showYoy, traces = [];
+    if (showYoy) traces.push({ x: yrs, y: yoy, type: "bar", name: "vs year before", yaxis: both ? "y2" : "y",
+      marker: { color: yoy.map(v => v > 0 ? css("--up") : css("--down")), opacity: 0.75 },
+      hovertemplate: `vs year before: %{y:+.1f} ${chgUnit()}<extra></extra>` });
+    if (showTotal) traces.push({ x: yrs, y: MQ.map(q => chg(q.total_cm[c])), type: "scatter", mode: "lines+markers",
+      name: "Total change", line: { color: css("--s1"), width: 3 }, marker: { size: 4 },
+      hovertemplate: `Total: %{y:+.1f} ${chgUnit()}<extra></extra>` });
+    const extra = {
+      yaxis: Object.assign(layout().yaxis, { title: showTotal ? `Total change (${chgUnit()})` : `Change vs year before (${chgUnit()})` }),
+      margin: { l: 60, r: both ? 60 : 20, t: 10, b: 40 },
+    };
+    if (both) extra.yaxis2 = { title: `Year-to-year (${chgUnit()})`, overlaying: "y", side: "right", showgrid: false,
+                               zerolinecolor: css("--muted"), tickfont: { color: css("--muted") } };
+    Plotly.react("chart-change", traces, layout(extra), cfg);
 
-    const head = `<thead><tr><th>Year</th>${QN.map(n => `<th>${n} (${chgUnit()})</th>`).join("")}</tr></thead>`;
-    const body = [...Q].reverse().map(q => `<tr><td>${q.year}</td>${q.yoy_cm.map(v =>
-      `<td class="${v > 0 ? "rise" : ""}">${fmtChg(v)}</td>`).join("")}</tr>`).join("");
+    const head = `<thead><tr><th>Year</th>${MN.map((n, i) => `<th class="${i === c ? "sel" : ""}">${n} 1</th>`).join("")}</tr></thead>`;
+    const body = [...MQ].reverse().map(q => `<tr><td>${q.year}</td>${q.yoy_cm.map((v, i) => {
+      const cls = [v > 0 ? "rise" : "", i === c ? "sel" : "", v !== null && v <= 0 && q.source[i] === "interpolated" ? "interp" : ""].join(" ").trim();
+      return `<td class="${cls}">${fmtChg(v)}</td>`;
+    }).join("")}</tr>`).join("");
     document.getElementById("table-change").innerHTML = head + `<tbody>${body}</tbody>`;
   }
 
@@ -487,13 +483,23 @@
   }
 
   function tabs() {
-    document.getElementById("change-tabs").innerHTML = QN.map((n, i) =>
-      `<button data-i="${i}" class="${i === changeIdx ? "on" : ""}">${n}</button>`).join("");
+    document.getElementById("change-tabs").innerHTML = MN.map((n, i) =>
+      `<button data-i="${i}" class="${i === changeIdx ? "on" : ""}">${n} 1</button>`).join("");
   }
   document.getElementById("change-tabs").addEventListener("click", (e) => {
     const b = e.target.closest("button"); if (!b) return;
     changeIdx = +b.dataset.i; tabs(); changeChart();
   });
+  // line / bars toggles (at least one stays on)
+  for (const [id, key] of [["show-total", "total"], ["show-yoy", "yoy"]]) {
+    document.getElementById(id).addEventListener("click", () => {
+      if (key === "total" && !(showTotal && !showYoy)) showTotal = !showTotal;
+      if (key === "yoy" && !(showYoy && !showTotal)) showYoy = !showYoy;
+      document.getElementById("show-total").classList.toggle("on", showTotal);
+      document.getElementById("show-yoy").classList.toggle("on", showYoy);
+      safe(changeChart, "chart-change");
+    });
+  }
 
   function safe(fn, chartId) {
     try { fn(); } catch (e) {
@@ -505,13 +511,12 @@
   function renderAll() {
     document.getElementById("u-metric").classList.toggle("on", metric());
     document.getElementById("u-imperial").classList.toggle("on", !metric());
-    safe(tiles); safe(dailyChart, "chart-daily"); safe(quarterlyChart, "chart-quarterly"); safe(tabs);
+    safe(tiles); safe(dailyChart, "chart-daily"); safe(tabs);
     safe(changeChart, "chart-change"); safe(projection, "chart-proj"); safe(footer); safe(renderWx);
   }
   for (const [id, u] of [["u-metric", "metric"], ["u-imperial", "imperial"]]) {
     document.getElementById(id).addEventListener("click", () => { units = u; localSet("units", u); renderAll(); });
   }
-  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", renderAll);
 
   // theme buttons
   document.querySelectorAll("[data-theme-btn]").forEach(b => b.addEventListener("click", () => {

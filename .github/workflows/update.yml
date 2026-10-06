@@ -26,6 +26,9 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install Excel library
+        run: pip install openpyxl
+
       - name: Download and process water level data
         run: python scripts/build_data.py
 

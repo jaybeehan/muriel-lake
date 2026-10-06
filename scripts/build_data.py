@@ -41,8 +41,11 @@ REALTIME_MONTHS = 19          # WaterOffice keeps roughly 18 months
 LST_OFFSET = dt.timedelta(hours=7)   # Alberta local standard time = UTC-7 (what HYDAT uses)
 QUARTER_MONTHS = (1, 4, 7, 10)
 QUARTER_NAMES = ("Jan 1", "Apr 1", "Jul 1", "Oct 1")
+MONTH_NAMES = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 PROJECTION_YEARS = 50
 OUT = Path(__file__).resolve().parent.parent / "site" / "data" / "lake.json"
+XLSX = OUT.with_name("muriel-lake-water-levels.xlsx")
+IN_PER_M = 100 / 2.54
 
 
 def fetch(url, params, tries=4):
@@ -183,23 +186,28 @@ def build():
     dates, levels, sources = merge(hydat, realtime)
     print(f"Merged series: {len(dates)} days, {dates[0]} to {dates[-1]}")
 
-    # ---- quarterly table
-    quarterly = []
-    for year in range(dates[0].year, dates[-1].year + 1):
-        vals, srcs = [], []
-        for m in QUARTER_MONTHS:
-            v, s = interpolate(dates, levels, sources, dt.date(year, m, 1))
-            vals.append(r(v))
-            srcs.append(s)
-        quarterly.append({"year": year, "level": vals, "source": srcs})
+    # ---- level on given days each year, plus total change (since the first value in each column)
+    #      and change vs the previous year, in cm
+    def table(months):
+        rows = []
+        for year in range(dates[0].year, dates[-1].year + 1):
+            vals, srcs = [], []
+            for m in months:
+                v, s = interpolate(dates, levels, sources, dt.date(year, m, 1))
+                vals.append(r(v))
+                srcs.append(s)
+            rows.append({"year": year, "level": vals, "source": srcs})
+        n = len(months)
+        first = [next((q["level"][c] for q in rows if q["level"][c] is not None), None) for c in range(n)]
+        for i, q in enumerate(rows):
+            q["total_cm"] = [r((v - first[c]) * 100, 1) if v is not None else None for c, v in enumerate(q["level"])]
+            prev = rows[i - 1]["level"] if i else [None] * n
+            q["yoy_cm"] = [r((v - p) * 100, 1) if v is not None and p is not None else None
+                           for v, p in zip(q["level"], prev)]
+        return rows
 
-    # ---- change tables (cm): total since first value in each column, and vs previous year
-    first = [next((q["level"][c] for q in quarterly if q["level"][c] is not None), None) for c in range(4)]
-    for i, q in enumerate(quarterly):
-        q["total_cm"] = [r((v - first[c]) * 100, 1) if v is not None else None for c, v in enumerate(q["level"])]
-        prev = quarterly[i - 1]["level"] if i else [None] * 4
-        q["yoy_cm"] = [r((v - p) * 100, 1) if v is not None and p is not None else None
-                       for v, p in zip(q["level"], prev)]
+    quarterly = table(QUARTER_MONTHS)
+    monthly = table(range(1, 13))
 
     # ---- July 1 projection (same method as the Google Sheet)
     last = quarterly[-1]
@@ -247,6 +255,8 @@ def build():
         "approved_until": max(hydat).isoformat(),
         "quarter_names": QUARTER_NAMES,
         "quarterly": quarterly,
+        "month_names": MONTH_NAMES,
+        "monthly": monthly,
         "quarterly_base": {"date": dt.date(qbase[0], QUARTER_MONTHS[qbase[1]], 1).isoformat(), "level": qbase[2]},
         "daily": {
             "base_date": dates[0].isoformat(),
@@ -267,6 +277,116 @@ def build():
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(data, separators=(",", ":")))
     print(f"Wrote {OUT} ({OUT.stat().st_size / 1024:.0f} KB)")
+    write_xlsx(data, dates, levels, sources)
+
+
+# ---------------------------------------------------------------- Excel download
+
+def write_xlsx(data, dates, levels, sources):
+    """The full tables as an Excel workbook (site/data/muriel-lake-water-levels.xlsx)."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    bold = Font(bold=True)
+    head_fill = PatternFill("solid", fgColor="DCE8F5")
+    rise_fill = PatternFill("solid", fgColor="DCF1E2")
+    rise_font = Font(bold=True, color="1E7B3C")
+    interp_font = Font(italic=True, color="8A94A3")
+    wb = Workbook()
+
+    def header(ws, cols, widths=None):
+        ws.append(cols)
+        for c in range(1, len(cols) + 1):
+            cell = ws.cell(row=1, column=c)
+            cell.font, cell.fill = bold, head_fill
+            cell.alignment = Alignment(horizontal="center", wrap_text=True)
+            ws.column_dimensions[get_column_letter(c)].width = (widths or {}).get(c, 12)
+        ws.freeze_panes = "B2"
+
+    # Daily
+    ws = wb.active
+    ws.title = "Daily"
+    header(ws, ["Date", "Level (m above sea level)", "vs first reading (m)", "vs first reading (in)", "Source"],
+           {1: 12, 2: 16, 3: 14, 4: 14, 5: 26})
+    base = levels[0]
+    for d, v, s in zip(dates, levels, sources):
+        ws.append([d, round(v, 3), round(v - base, 3), round((v - base) * IN_PER_M, 1),
+                   "Approved (HYDAT)" if s == "approved" else "Provisional (real-time)"])
+    for row in ws.iter_rows(min_row=2, max_col=4):
+        row[0].number_format = "yyyy-mm-dd"
+        row[1].number_format = row[2].number_format = "0.000"
+        row[3].number_format = "0.0"
+
+    months = [f"{m} 1" for m in MONTH_NAMES]
+    M = data["monthly"]
+
+    def month_sheet(title, value, fmt, rises=False):
+        ws = wb.create_sheet(title)
+        header(ws, ["Year"] + months, {1: 8})
+        for q in M:
+            ws.append([q["year"]] + [value(q, c) for c in range(12)])
+            for c in range(12):
+                cell = ws.cell(row=ws.max_row, column=c + 2)
+                cell.number_format = fmt
+                if cell.value is None:
+                    continue
+                if rises and cell.value > 0:
+                    cell.fill, cell.font = rise_fill, rise_font
+                elif not rises and q["source"][c] == "interpolated":
+                    cell.font = interp_font
+
+    month_sheet("1st of month (m)", lambda q, c: q["level"][c], "0.000")
+    month_sheet("Year-to-year (cm)", lambda q, c: q["yoy_cm"][c], "+0.0;-0.0;0.0", rises=True)
+    month_sheet("Year-to-year (in)",
+                lambda q, c: None if q["yoy_cm"][c] is None else round(q["yoy_cm"][c] / 2.54, 1), "+0.0;-0.0;0.0", rises=True)
+    month_sheet("Total change (cm)", lambda q, c: q["total_cm"][c], "+0.0;-0.0;0.0")
+    month_sheet("Total change (in)",
+                lambda q, c: None if q["total_cm"][c] is None else round(q["total_cm"][c] / 2.54, 1), "+0.0;-0.0;0.0")
+
+    # July 1 projection
+    P = data["projection"]
+    ws = wb.create_sheet("July 1 projection")
+    ws.append([f"Projection for {P['target']}, starting from the {P['anchor']['date']} reading "
+               f"({P['anchor']['level']:.3f} m), using {P['years_of_history']} years of history"])
+    ws["A1"].font = bold
+    ws.append([])
+    ws.append(["Scenario", "Percentile", "Projected level (m)", "vs latest reading (cm)", "vs latest reading (in)",
+               f"vs July 1, {P['last_july']['year']} (cm)", f"vs July 1, {P['last_july']['year']} (in)"])
+    for c in range(1, 8):
+        ws.cell(row=3, column=c).font, ws.cell(row=3, column=c).fill = bold, head_fill
+        ws.column_dimensions[get_column_letter(c)].width = 18
+    for sc in P["scenarios"]:
+        ws.append([sc["name"], sc["percentile"] / 100, sc["level"], sc["change_cm"], round(sc["change_cm"] / 2.54, 1),
+                   sc["vs_last_jul_cm"], round(sc["vs_last_jul_cm"] / 2.54, 1)])
+        ws.cell(row=ws.max_row, column=2).number_format = "0%"
+        ws.cell(row=ws.max_row, column=3).number_format = "0.000"
+    ws.append([])
+    ws.append(["July 1", "Trend, all years (m)", "Trend, last 10 years (m)", "Typical yearly change (m)"])
+    for c in range(1, 5):
+        ws.cell(row=ws.max_row, column=c).font, ws.cell(row=ws.max_row, column=c).fill = bold, head_fill
+    for lt in P["long_term"]:
+        ws.append([lt["year"], lt["trend_all"], lt["trend_10"], lt["typical"]])
+        for c in (2, 3, 4):
+            ws.cell(row=ws.max_row, column=c).number_format = "0.000"
+
+    # About
+    ws = wb.create_sheet("About")
+    for line in [
+        f"Muriel Lake water levels — Water Survey of Canada station {STATION} ({STATION_NAME})",
+        f"Generated {data['updated']} (UTC). Latest reading {data['latest']['date']}: {data['latest']['level']:.3f} m.",
+        f"Approved historical data (HYDAT) through {data['approved_until']}; later dates are provisional real-time data.",
+        "Days with no reading are filled by straight-line interpolation (grey italic in the 1st-of-month table).",
+        "Green cells in the year-to-year sheets mean the lake was higher than on the same date the year before.",
+        "Data © Environment and Climate Change Canada, Open Government Licence – Canada.",
+        "Live page: https://jaybeehan.github.io/muriel-lake/",
+    ]:
+        ws.append([line])
+    ws["A1"].font = Font(bold=True, size=13)
+    ws.column_dimensions["A"].width = 110
+
+    wb.save(XLSX)
+    print(f"Wrote {XLSX} ({XLSX.stat().st_size / 1024:.0f} KB)")
 
 
 if __name__ == "__main__":
