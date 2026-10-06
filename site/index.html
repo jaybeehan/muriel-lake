@@ -15,12 +15,18 @@
     --s1: #2f6fb3; --s2: #d9822b; --s3: #2e9a5b; --s4: #8b5cc4;
   }
   @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-theme="light"]) {
       --bg: #12161c; --card: #1b2129; --text: #e6eaf0; --muted: #9aa5b4; --line: #2c3440;
       --accent: #6ea8e8; --accent-soft: #1f2d3d; --up: #6fd396; --up-bg: #1d3a28; --down: #f0a066;
       --interp: #7b8696;
       --s1: #6ea8e8; --s2: #f0a066; --s3: #6fd396; --s4: #b99af0;
     }
+  }
+  :root[data-theme="dark"] {
+    --bg: #12161c; --card: #1b2129; --text: #e6eaf0; --muted: #9aa5b4; --line: #2c3440;
+    --accent: #6ea8e8; --accent-soft: #1f2d3d; --up: #6fd396; --up-bg: #1d3a28; --down: #f0a066;
+    --interp: #7b8696;
+    --s1: #6ea8e8; --s2: #f0a066; --s3: #6fd396; --s4: #b99af0;
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text);
@@ -34,6 +40,12 @@
   .toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; background: var(--card); }
   .toggle button { border: 0; background: none; color: var(--muted); padding: 7px 16px; font: inherit; cursor: pointer; }
   .toggle button.on { background: var(--accent); color: #fff; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .daypick { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 10px; color: var(--muted); font-size: .9rem; }
+  .daypick select, .daypick button { font: inherit; color: var(--text); background: var(--card); border: 1px solid var(--line);
+                                     border-radius: 8px; padding: 5px 8px; }
+  .daypick button { cursor: pointer; }
+  .daypick button:disabled { opacity: .45; cursor: default; }
   .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 18px; }
   .tile { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
   .tile .k { color: var(--muted); font-size: .85rem; }
@@ -69,12 +81,25 @@
       <h1>Muriel Lake water levels</h1>
       <p class="sub" id="subtitle">Station 06AC007 · near Gurneyville, Alberta</p>
     </div>
-    <div class="toggle" role="group" aria-label="Units">
-      <button id="u-metric" class="on">Metric</button>
-      <button id="u-imperial">Inches</button>
+    <div class="controls">
+      <div class="toggle" role="group" aria-label="Units">
+        <button id="u-metric" class="on">Metric</button>
+        <button id="u-imperial">Inches</button>
+      </div>
+      <div class="toggle" role="group" aria-label="Theme">
+        <button data-theme-btn="auto">Auto</button>
+        <button data-theme-btn="light">Light</button>
+        <button data-theme-btn="dark">Dark</button>
+      </div>
     </div>
   </header>
 
+  <div class="daypick">
+    <span>Summary for</span>
+    <select id="pick-month" aria-label="Month"></select>
+    <select id="pick-day" aria-label="Day"></select>
+    <button id="pick-reset">Reset</button>
+  </div>
   <div class="tiles" id="tiles"></div>
 
   <section>
@@ -141,6 +166,15 @@
   const fmtChg = (cm) => cm == null ? "" : (chg(cm) > 0 ? "+" : "") + chg(cm).toFixed(1);
   const fmtDate = (s) => new Date(s + "T12:00:00").toLocaleDateString("en-CA", { year: "numeric", month: "short", day: "numeric" });
 
+  // ---- theme: auto (follow the device), light or dark
+  let theme = localGet("theme") || "auto";
+  function applyTheme() {
+    if (theme === "auto") delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = theme;
+    document.querySelectorAll("[data-theme-btn]").forEach(b => b.classList.toggle("on", b.dataset.themeBtn === theme));
+  }
+  applyTheme();
+
   try {
     D = await (await fetch("data/lake.json", { cache: "no-cache" })).json();
   } catch (e) {
@@ -161,12 +195,82 @@
       yaxis: { gridcolor: grid, zerolinecolor: muted, tickfont: { color: muted } },
       legend: { orientation: "h", y: -0.15 },
       hovermode: "x unified",
+      hoverlabel: { bgcolor: css("--card"), bordercolor: css("--line"), font: { color: text, size: 12 } },
     }, extra || {});
   }
   const cfg = { displaylogo: false, responsive: true, modeBarButtonsToRemove: ["lasso2d", "select2d", "autoScale2d"] };
   const seriesColors = () => [css("--s1"), css("--s2"), css("--s3"), css("--s4")];
 
-  function tiles() {
+  // ---- daily series as day numbers + absolute levels, for any-date lookups
+  const DAYNUM = D.daily.dates.map(s => Date.parse(s + "T00:00:00Z") / 864e5);
+  const DAYLVL = D.daily.rel_m.map(x => x + D.daily.base_level);
+  const dayNum = (y, m, d) => Date.UTC(y, m - 1, d) / 864e5;
+  // level on a date: measured if there's a reading, otherwise straight line between neighbours
+  function levelOn(y, m, d) {
+    const t = dayNum(y, m, d);
+    let lo = 0, hi = DAYNUM.length - 1;
+    if (t < DAYNUM[0] || t > DAYNUM[hi]) return null;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (DAYNUM[mid] === t) return { v: DAYLVL[mid], measured: true };
+      if (DAYNUM[mid] < t) lo = mid + 1; else hi = mid - 1;
+    }
+    const f = (t - DAYNUM[hi]) / (DAYNUM[lo] - DAYNUM[hi]);
+    return { v: DAYLVL[hi] + (DAYLVL[lo] - DAYLVL[hi]) * f, measured: false };
+  }
+  function percentile(vals, p) {
+    const s = [...vals].sort((a, b) => a - b), pos = (s.length - 1) * p, i = Math.floor(pos);
+    return s[i] + ((s[Math.min(i + 1, s.length - 1)] - s[i]) * (pos - i));
+  }
+  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const MDAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  let pick = null; // null = default summary; otherwise {m, d}
+
+  function tiles() { pick ? tilesFor(pick.m, pick.d) : tilesDefault(); }
+
+  // Same four metrics as the default summary, for any month/day
+  function tilesFor(m, d) {
+    const lastT = DAYNUM[DAYNUM.length - 1];
+    const lastYear = new Date(lastT * 864e5).getUTCFullYear();
+    const Y = dayNum(lastYear, m, d) <= lastT ? lastYear : lastYear - 1;   // most recent occurrence
+    const now = levelOn(Y, m, d), prev = levelOn(Y - 1, m, d);
+    const firstYear = new Date(DAYNUM[0] * 864e5).getUTCFullYear();
+    const y0 = levelOn(firstYear, m, d) ? firstYear : firstYear + 1;
+    const first = levelOn(y0, m, d);
+    // Outlook: the next occurrence of this date, projected from the latest reading using how the lake
+    // moved between the same two calendar days in every past year
+    const lastDate = new Date(lastT * 864e5), lm = lastDate.getUTCMonth() + 1, ld = lastDate.getUTCDate();
+    const tY = dayNum(lastYear, m, d) > lastT ? lastYear : lastYear + 1;
+    const k = tY - lastYear;
+    const deltas = [];
+    for (let y = y0; dayNum(y + k, m, d) <= lastT; y++) {
+      const a = levelOn(y, lm, ld), b = levelOn(y + k, m, d);
+      if (a && b) deltas.push(b.v - a.v);
+    }
+    const anchor = DAYLVL[DAYLVL.length - 1];
+    const label = `${MONTHS[m - 1]} ${d}`;
+    const cm = (x) => Math.round(x * 1000) / 10;
+    const cls = (v) => v > 0 ? "up" : v < 0 ? "down" : "";
+    const yoy = prev ? cm(now.v - prev.v) : null, tot = cm(now.v - first.v);
+    const typ = cm(anchor + percentile(deltas, .5) - now.v);
+    const dry = cm(anchor + percentile(deltas, .1) - now.v), wet = cm(anchor + percentile(deltas, .9) - now.v);
+    const elev = metric() ? now.v.toFixed(3) + " m" : (now.v / 0.3048).toLocaleString("en-CA", { maximumFractionDigits: 1 }) + " ft";
+    document.getElementById("tiles").innerHTML = `
+      <div class="tile"><div class="k">Level on ${label}, ${Y}</div>
+        <div class="v">${elev}</div>
+        <div class="d">${now.measured ? "Measured" : "Interpolated"} · latest reading ${fmtDate(D.latest.date)}</div></div>
+      <div class="tile"><div class="k">${label}, ${Y} vs a year earlier</div>
+        <div class="v ${cls(yoy)}">${yoy === null ? "–" : fmtChg(yoy) + " " + chgUnit()}</div>
+        <div class="d">${yoy === null ? "No reading a year earlier" : yoy > 0 ? "The lake rose" : "The lake fell"}</div></div>
+      <div class="tile"><div class="k">${label}, ${Y} vs first ${label} on record</div>
+        <div class="v ${cls(tot)}">${fmtChg(tot)} ${chgUnit()}</div>
+        <div class="d">Record starts ${y0}</div></div>
+      <div class="tile"><div class="k">Typical outlook, ${label}, ${tY}</div>
+        <div class="v">${fmtChg(typ)} ${chgUnit()}</div>
+        <div class="d">vs ${label}, ${Y} (range ${fmtChg(dry)} to ${fmtChg(wet)}) · from the ${fmtDate(D.latest.date)} reading, ${deltas.length} yrs of history</div></div>`;
+  }
+
+  function tilesDefault() {
     const last = Q[Q.length - 1];
     const ci = Math.max(...last.level.map((v, j) => v !== null ? j : -1)); // latest quarterly date with a value
     const yoy = last.yoy_cm[ci], tot = last.total_cm[ci];
@@ -306,6 +410,32 @@
     document.getElementById(id).addEventListener("click", () => { units = u; localSet("units", u); renderAll(); });
   }
   window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", renderAll);
+
+  // theme buttons
+  document.querySelectorAll("[data-theme-btn]").forEach(b => b.addEventListener("click", () => {
+    theme = b.dataset.themeBtn; localSet("theme", theme); applyTheme(); renderAll();
+  }));
+
+  // summary day picker: blank = default summary
+  const selM = document.getElementById("pick-month"), selD = document.getElementById("pick-day"),
+        btnR = document.getElementById("pick-reset");
+  selM.innerHTML = `<option value="">Month</option>` + MONTHS.map((n, i) => `<option value="${i + 1}">${n}</option>`).join("");
+  function fillDays(keep) {
+    const m = +selM.value, n = m ? MDAYS[m - 1] : 31;
+    selD.innerHTML = `<option value="">Day</option>` +
+      Array.from({ length: n }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join("");
+    if (keep && +keep <= n) selD.value = keep;
+  }
+  function onPick() {
+    pick = selM.value && selD.value ? { m: +selM.value, d: +selD.value } : null;
+    btnR.disabled = !pick && !selM.value && !selD.value;
+    safe(tiles);
+  }
+  selM.addEventListener("change", () => { fillDays(selD.value); onPick(); });
+  selD.addEventListener("change", onPick);
+  btnR.addEventListener("click", () => { selM.value = ""; fillDays(); onPick(); });
+  fillDays(); btnR.disabled = true;
+
   renderAll();
 })();
 </script>
