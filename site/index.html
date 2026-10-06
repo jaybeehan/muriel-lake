@@ -6,7 +6,7 @@
 <title>Muriel Lake Water Levels</title>
 <meta name="description" content="Water levels for Muriel Lake, Alberta (station 06AC007), updated weekly from Environment Canada.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M2 20c4-3 8 3 14 0s10 3 14 0v10H2z' fill='%232f6fb3'/%3E%3C/svg%3E">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.35.2/plotly.min.js"></script>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
 <style>
   :root {
     --bg: #f6f7f9; --card: #ffffff; --text: #1d2430; --muted: #5d6878; --line: #e2e6ec;
@@ -289,10 +289,18 @@
     changeIdx = +b.dataset.i; tabs(); changeChart();
   });
 
+  function safe(fn, chartId) {
+    try { fn(); } catch (e) {
+      console.error(e);
+      if (chartId) document.getElementById(chartId).innerHTML =
+        '<p class="error">This chart could not be drawn (' + (window.Plotly ? e.message : "the charting library did not load") + ').</p>';
+    }
+  }
   function renderAll() {
     document.getElementById("u-metric").classList.toggle("on", metric());
     document.getElementById("u-imperial").classList.toggle("on", !metric());
-    tiles(); dailyChart(); quarterlyChart(); tabs(); changeChart(); projection(); footer();
+    safe(tiles); safe(dailyChart, "chart-daily"); safe(quarterlyChart, "chart-quarterly"); safe(tabs);
+    safe(changeChart, "chart-change"); safe(projection, "chart-proj"); safe(footer);
   }
   for (const [id, u] of [["u-metric", "metric"], ["u-imperial", "imperial"]]) {
     document.getElementById(id).addEventListener("click", () => { units = u; localSet("units", u); renderAll(); });
