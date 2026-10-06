@@ -38,7 +38,8 @@ jobs:
             echo "No data changes."
           else
             git commit -m "Update water level data $(date -u +%Y-%m-%d)"
-            git push
+            git pull --rebase -X theirs origin main
+            git push origin HEAD:main
           fi
 
       - uses: actions/configure-pages@v5
