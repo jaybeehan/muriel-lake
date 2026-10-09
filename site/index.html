@@ -168,6 +168,14 @@
 
   <div class="stationbar">
     <label for="st-input">Station</label>
+    <select id="st-prov" class="field" aria-label="Province or territory">
+      <option value="">All provinces</option>
+      <option value="AB">Alberta</option><option value="BC">British Columbia</option><option value="MB">Manitoba</option>
+      <option value="NB">New Brunswick</option><option value="NL">Newfoundland &amp; Labrador</option>
+      <option value="NS">Nova Scotia</option><option value="NT">Northwest Territories</option><option value="NU">Nunavut</option>
+      <option value="ON">Ontario</option><option value="PE">Prince Edward Island</option><option value="QC">Quebec</option>
+      <option value="SK">Saskatchewan</option><option value="YT">Yukon</option><option value="US">U.S. border stations</option>
+    </select>
     <div class="st-wrap">
       <input id="st-input" class="field" type="search" autocomplete="off" spellcheck="false"
              placeholder="Search a lake or river name, or a station number">
@@ -935,28 +943,40 @@
   // ================================================================ station search
   const norm = (s) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
   let hits = [], act = -1;
+  const CANADA = ["AB", "BC", "MB", "NB", "NL", "NS", "NT", "NU", "ON", "PE", "QC", "SK", "YT"];
+  let prov = CANADA.concat("US").includes(localGet("prov")) ? localGet("prov") : "";
+  $("st-prov").value = prov;
+  const provOk = (code) => !prov || (prov === "US" ? !CANADA.includes(code) : code === prov);
   async function search(q) {
     const list = $("st-list"); q = q.trim();
-    if (q.length < 2) { list.hidden = true; return; }
+    if (q.length < 2 && !prov) { list.hidden = true; return; }   // with a province picked, an empty box lists its stations
     await loadStations();
     if (STATIONS) {
-      const words = norm(q).split(/\s+/), qq = q.toUpperCase();
-      hits = STATIONS.filter((s) => s[0].startsWith(qq) || words.every((w) => norm(s[1]).includes(w)))
-        .sort((a, b) => (b[0] === qq) - (a[0] === qq) || b[5] - a[5] || b[6] - a[6] || a[1].localeCompare(b[1])).slice(0, 40);
+      const words = q ? norm(q).split(/\s+/) : [], qq = q.toUpperCase();
+      hits = STATIONS.filter((s) => provOk(s[2]) && (!q || s[0].startsWith(qq) || words.every((w) => norm(s[1]).includes(w))))
+        .sort((a, b) => (b[0] === qq) - (a[0] === qq) || b[5] - a[5] || b[6] - a[6] || a[1].localeCompare(b[1])).slice(0, q ? 40 : 300);
     } else {
       try {
-        const j = await (await fetch(`${API}hydrometric-stations/items?f=json&limit=30&q=${encodeURIComponent(q)}`)).json();
-        hits = j.features.map((f) => [f.properties.STATION_NUMBER, f.properties.STATION_NAME, f.properties.PROV_TERR_STATE_LOC, 0, 0, f.properties.STATUS_EN === "Active" ? 1 : 0, f.properties.REAL_TIME]);
+        const j = await (await fetch(`${API}hydrometric-stations/items?f=json&limit=100&q=${encodeURIComponent(q || prov)}`)).json();
+        hits = j.features.map((f) => [f.properties.STATION_NUMBER, f.properties.STATION_NAME, f.properties.PROV_TERR_STATE_LOC, 0, 0, f.properties.STATUS_EN === "Active" ? 1 : 0, f.properties.REAL_TIME])
+          .filter((s) => provOk(s[2])).slice(0, 40);
       } catch (e) { hits = []; }
     }
     act = -1;
     list.innerHTML = hits.length ? hits.map((s, i) => `<li role="option" data-i="${i}"><span class="code">${s[0]}</span>${esc(titleCase(s[1]))}
         <div class="meta">${s[2]}${s[5] ? "" : " · discontinued"}${s[6] ? " · real-time" : ""}</div></li>`).join("")
-      : `<li class="meta" style="cursor:default">No stations match “${esc(q)}”</li>`;
+      : `<li class="meta" style="cursor:default">${q ? `No stations match “${esc(q)}”` : "No stations"}${prov ? " in " + esc($("st-prov").selectedOptions[0].text) : ""}</li>`;
+    if (!q && hits.length >= 300) list.innerHTML += `<li class="meta" style="cursor:default">Showing the first 300 — type a name to narrow the list</li>`;
     list.hidden = false;
   }
   $("st-input").addEventListener("input", (e) => search(e.target.value));
-  $("st-input").addEventListener("focus", () => { loadStations(); if ($("st-input").value.trim().length >= 2) search($("st-input").value); });
+  $("st-input").addEventListener("focus", () => { loadStations(); if (prov || $("st-input").value.trim().length >= 2) search($("st-input").value); });
+  $("st-prov").addEventListener("change", (e) => {
+    prov = e.target.value; localSet("prov", prov);
+    $("st-input").placeholder = prov ? `Search ${e.target.selectedOptions[0].text}, or pick from the list` : "Search a lake or river name, or a station number";
+    $("st-input").focus(); search($("st-input").value);
+  });
+  if (prov) $("st-input").placeholder = `Search ${$("st-prov").selectedOptions[0].text}, or pick from the list`;
   $("st-input").addEventListener("keydown", (e) => {
     const items = [...$("st-list").querySelectorAll("li[data-i]")];
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
