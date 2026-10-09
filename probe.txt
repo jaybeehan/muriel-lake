@@ -1,0 +1,41 @@
+=== https://api.weather.gc.ca/collections/hydrometric-daily-mean/items?STATION_NUMBER=05FA013&f=csv&limit=3&properties=DATE,LEVEL&sortby=-DATE
+HTTP/1.1 200 OK
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Headers: Origin, X-Requested-With, Content-Type, Accept, Authorization
+Content-Type: text/csv; charset=utf-8
+x,y,DATE,LEVEL
+-114.12650299072266,53.02378082275391,2025-10-31,849.3980102539062
+-114.12650299072266,53.02378082275391,2025-10-30,849.39501953125
+-114.12650299072266,53.02378082275391,2025-10-29,849.39697265625
+
+=== https://api.weather.gc.ca/collections/hydrometric-daily-mean/items?STATION_NUMBER=05FA013&f=json&limit=2&properties=DATE,LEVEL&skipGeometry=true&sortby=-DATE
+HTTP/1.1 200 OK
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Headers: Origin, X-Requested-With, Content-Type, Accept, Authorization
+Content-Type: application/json
+{"type":"FeatureCollection","features":[{"id":"05FA013.2025-10-31","type":"Feature","geometry":null,"properties":{"DATE":"2025-10-31","LEVEL":849.3980102539062}},{"id":"05FA013.2025-10-30","type":"Feature","geometry":null,"properties":{"DATE":"2025-10-30","LEVEL":849.39501953125}}],"numberMatched":12423,"numberReturned":2,"links":[{"type":"application/geo+json","rel":"self","title":"This document 
+=== https://api.weather.gc.ca/collections/hydrometric-realtime/items?STATION_NUMBER=05FA013&f=csv&limit=3&properties=DATETIME,LEVEL&sortby=DATETIME
+HTTP/1.1 200 OK
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Headers: Origin, X-Requested-With, Content-Type, Accept, Authorization
+Content-Type: text/csv; charset=utf-8
+x,y,DATETIME,LEVEL
+-114.1265,53.02378,2026-09-10T00:00:00Z,849.799
+-114.1265,53.02378,2026-09-10T00:05:00Z,849.803
+-114.1265,53.02378,2026-09-10T00:10:00Z,849.803
+
+=== https://api.weather.gc.ca/collections/hydrometric-realtime/items?STATION_NUMBER=05FA013&f=json&limit=1&resulttype=hits
+HTTP/1.1 200 OK
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Headers: Origin, X-Requested-With, Content-Type, Accept, Authorization
+Content-Type: application/json
+{"type":"FeatureCollection","features":[],"numberMatched":8407,"links":[{"type":"application/geo+json","rel":"self","title":"This document as GeoJSON","href":"https://api.weather.gc.ca/collections/hydrometric-realtime/items?f=json&STATION_NUMBER=05FA013&limit=1&resulttype=hits"},{"rel":"alternate","type":"application/ld+json","title":"This document as RDF (JSON-LD)","href":"https://api.weather.gc.
+=== https://api.weather.gc.ca/collections/hydrometric-stations/items?f=csv&limit=2&properties=STATION_NUMBER,STATION_NAME,PROV_TERR_STATE_LOC,STATUS_EN,REAL_TIME
+HTTP/1.1 200 OK
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Headers: Origin, X-Requested-With, Content-Type, Accept, Authorization
+Content-Type: text/csv; charset=utf-8
+x,y,STATION_NUMBER,STATION_NAME,PROV_TERR_STATE_LOC,STATUS_EN,REAL_TIME
+-70.08110809326172,46.557498931884766,01AA002,DAAQUAM (RIVIERE) EN AVAL DE LA RIVIERE SHIDGEL,QC,Discontinued,0
+-68.63639068603516,47.5483283996582,01AD001,MADAWASKA (RIVIERE) A 6 KM EN AVAL DU BARRAGE TEMISCOUATA,QC,Discontinued,0
+
