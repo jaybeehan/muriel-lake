@@ -510,7 +510,7 @@
   let MU = null, MUM = null;            // Muriel Lake (for the overlay)
   let overlay = true;
   let pick = null;                      // {m, d} for the summary; default = latest reading
-  let lookback = +(localGet("lookback") || 1);
+  let lookback = Math.round(+localGet("lookback")); if (!(lookback >= 1 && lookback <= 600)) lookback = 1;
   let cmpA = null, cmpB = null;
   let dailyFrom = null, changeFrom = null;
   let changeIdx = new Date().getMonth(), showTotal = true, showYoy = true;
@@ -596,7 +596,6 @@
       outlook = `<div class="v">${fmtChange(at(.5))}</div>
         <div class="d">vs July 1, ${jy} · range ${fmtChange(at(.1))} to ${fmtChange(at(.9))} · ${deltas.length} yrs of history</div>`;
     }
-    const opts = [1, 2, 3, 6, 12, 24].map((x) => `<option value="${x}" ${x === lookback ? "selected" : ""}>${x} month${x > 1 ? "s" : ""}</option>`).join("");
     $("tiles").innerHTML = `
       <div class="tile"><div class="k">${isLatest ? "Latest reading" : "Level"} · ${label}, ${Y}</div>
         <div class="v">${fmtElev(now.v)}</div>
@@ -607,7 +606,7 @@
       <div class="tile"><div class="k">${label}, ${Y} vs first ${label} on record</div>
         <div class="v ${cls(tot)}">${fmtChange(tot)}</div>
         <div class="d">Record starts ${y0}</div></div>
-      <div class="tile"><div class="k">${lb == null ? "Change" : lb >= 0 ? "Gained" : "Lost"} in the last <select class="field" id="lookback" aria-label="Months">${opts}</select></div>
+      <div class="tile"><div class="k">${lb == null ? "Change" : lb >= 0 ? "Gained" : "Lost"} in the last <input class="field" id="lookback" type="number" inputmode="numeric" min="1" max="600" step="1" value="${lookback}" aria-label="Number of months" style="width:4.2em;padding:1px 4px"> month${lookback === 1 ? "" : "s"}</div>
         <div class="v ${cls(lb)}">${fmtChange(lb)}</div>
         <div class="d">${back ? `Since ${fmtDay(addMonths(Y, m, d, -lookback))}` : "Before the record starts"}</div></div>
       <div class="tile"><div class="k">Typical outlook, July 1, ${tY}</div>${outlook}</div>`;
@@ -705,18 +704,20 @@
       const yv = R.map((q) => q.yoy[c] == null ? null : small.conv(q.yoy[c]));
       traces.push({ x: yrs, y: yv, type: "bar", name: "vs year before", yaxis: both ? "y2" : "y",
         marker: { color: yv.map((v) => v > 0 ? css("--up") : css("--down")), opacity: 0.75 },
-        customdata: toLatest,
-        hovertemplate: `vs year before: %{y:+.1f} ${small.unit()}` + (showTotal ? "" : "<br>%{customdata}") + "<extra></extra>" });
+        customdata: R.map((q, i) => q.yoy[c] == null ? "" : `vs year before: ${fmtChange(q.yoy[c])}` + (showTotal ? "" : `<br>${toLatest[i]}`)),
+        hovertemplate: "%{customdata}<extra></extra>" });
     }
     if (showTotal) {
       traces.push({ x: yrs, y: R.map((q) => q.level[c] == null || baseS == null ? null : big.conv(q.level[c] - baseS)),
         type: "scatter", mode: "lines+markers", name: baseMu != null ? shortName(S) : "Total change",
-        line: { color: css("--s1"), width: 3 }, marker: { size: 4 }, customdata: toLatest,
-        hovertemplate: `Total: %{y:+${big.fmt()}} ${big.unit()}<br>%{customdata}<extra></extra>` });
+        line: { color: css("--s1"), width: 3 }, marker: { size: 4 },
+        customdata: R.map((q, i) => q.level[c] == null || baseS == null ? "" : `Total: ${fmtChange(q.level[c] - baseS)}<br>${toLatest[i]}`),
+        hovertemplate: "%{customdata}<extra></extra>" });
       if (showOverlay() && baseMu != null) {
         traces.push({ x: MUM.rows.map((q) => q.year), y: MUM.rows.map((q) => q.level[c] == null ? null : big.conv(q.level[c] - baseMu)),
           type: "scatter", mode: "lines", name: "Muriel Lake", line: { color: css("--s2"), width: 2, dash: "dot" },
-          hovertemplate: `Muriel Lake: %{y:+${big.fmt()}} ${big.unit()}<extra></extra>` });
+          customdata: MUM.rows.map((q) => q.level[c] == null ? "" : `Muriel Lake: ${fmtChange(q.level[c] - baseMu)}`),
+          hovertemplate: "%{customdata}<extra></extra>" });
       }
     }
     const from = Math.max(changeFrom == null ? firstY : changeFrom, firstY);
@@ -766,20 +767,25 @@
 
     const big = AX.big, rel = (v) => big.conv(v - base), f = big.fmt(), u = big.unit();
     const jul = M.rows.filter((q) => q.level[6] != null);
-    const join = (key) => ({ x: [P.lastJulYear, ...P.longTerm.map((r) => r.year)], y: [rel(P.lastJul), ...P.longTerm.map((r) => rel(r[key]))] });
+    const txt = (label, v) => `${label}: ${fmtChange(v - base)}`;
+    const join = (key, label) => {
+      const vals = [P.lastJul, ...P.longTerm.map((r) => r[key])];
+      return { x: [P.lastJulYear, ...P.longTerm.map((r) => r.year)], y: vals.map(rel), customdata: vals.map((v) => txt(label, v)),
+               hovertemplate: "%{customdata}<extra></extra>" };
+    };
     const typ = P.scenarios[3], dry = P.scenarios[1], wet = P.scenarios[5];
     Plotly.react("chart-proj", [
       { x: jul.map((q) => q.year), y: jul.map((q) => rel(q.level[6])), name: "Actual July 1", mode: "lines+markers",
-        line: { color: css("--s1"), width: 3 }, marker: { size: 4 }, hovertemplate: `Actual: %{y:+${f}} ${u}<extra></extra>` },
-      Object.assign(join("trend10"), { name: "Trend, last 10 yrs", mode: "lines", line: { color: css("--s4"), dash: "dash", width: 2 },
-        hovertemplate: `10-yr trend: %{y:+${f}} ${u}<extra></extra>` }),
-      Object.assign(join("typical"), { name: "Typical yearly change", mode: "lines", line: { color: css("--muted"), dash: "dash", width: 2 },
-        hovertemplate: `Typical change: %{y:+${f}} ${u}<extra></extra>` }),
+        line: { color: css("--s1"), width: 3 }, marker: { size: 4 },
+        customdata: jul.map((q) => txt("Actual", q.level[6])), hovertemplate: "%{customdata}<extra></extra>" },
+      Object.assign(join("trend10", "10-yr trend"), { name: "Trend, last 10 yrs", mode: "lines", line: { color: css("--s4"), dash: "dash", width: 2 } }),
+      Object.assign(join("typical", "Typical change"), { name: "Typical yearly change", mode: "lines", line: { color: css("--muted"), dash: "dash", width: 2 } }),
       { x: [P.targetYear], y: [rel(typ.level)], name: "Next July 1 (dry–wet range)", mode: "markers",
         marker: { color: css("--s3"), size: 10, symbol: "diamond" },
         error_y: { type: "data", symmetric: false, array: [rel(wet.level) - rel(typ.level)], arrayminus: [rel(typ.level) - rel(dry.level)], color: css("--s3") },
-        hovertemplate: `Typical: %{y:+${f}} ${u}<extra></extra>` },
-    ], layout({ yaxis: { title: { text: `vs ${baseLbl} (${u})` } } }), cfg());
+        customdata: [`Typical: ${fmtChange(typ.level - base)} (dry ${fmtChange(dry.level - base)}, wet ${fmtChange(wet.level - base)})`],
+        hovertemplate: "%{customdata}<extra></extra>" },
+    ], layout({ yaxis: { title: { text: `vs ${baseLbl} (${u})` } }, hoverdistance: 6 }), cfg());
 
     const cell = (v) => metric() ? `${sgn(v - base, true)}${Math.abs(v - base).toFixed(3)}` : ftin(v - base, true);
     $("table-long").innerHTML =
@@ -988,8 +994,13 @@
   $("pick-month").addEventListener("change", () => { fillDays(); onPick(); });
   $("pick-day").addEventListener("change", onPick);
   $("pick-reset").addEventListener("click", () => { pick = null; syncPicker(); safe(tiles); });
+  $("tiles").addEventListener("keydown", (e) => { if (e.target.id === "lookback" && e.key === "Enter") e.target.blur(); });
   $("tiles").addEventListener("change", (e) => {
-    if (e.target.id === "lookback") { lookback = +e.target.value; localSet("lookback", lookback); safe(tiles); }
+    if (e.target.id === "lookback") {
+      const n = Math.round(+e.target.value);
+      if (n >= 1 && n <= 600) { lookback = n; localSet("lookback", lookback); }
+      safe(tiles);                                  // also puts a bad entry back to the last good number
+    }
   });
 
   for (const [id, set] of [["cmp-a", (t) => { cmpA = t; }], ["cmp-b", (t) => { cmpB = t; }]]) {
