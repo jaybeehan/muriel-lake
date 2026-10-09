@@ -184,7 +184,7 @@
     <label class="chk" id="ov-wrap" hidden><input type="checkbox" id="ov-chk" checked> Overlay Muriel Lake</label>
     <button class="field" id="st-home" hidden>Back to Muriel Lake</button>
     <span class="links">Find stations:
-      <a id="map-link" href="https://wateroffice.ec.gc.ca/map/index_e.html?type=historical&amp;target_station=06AC007" target="_blank" rel="noopener">WaterOffice map</a> ·
+      <a id="map-link" href="https://wateroffice.ec.gc.ca/map/index_e.html" target="_blank" rel="noopener">WaterOffice map</a> ·
       <a href="https://wateroffice.ec.gc.ca/search/historical_e.html" target="_blank" rel="noopener">WaterOffice search</a></span>
   </div>
   <p class="status" id="st-status"></p>
@@ -809,7 +809,6 @@
     $("title").textContent = `${sn} water levels`;
     document.title = `${sn} Water Levels`;
     $("subtitle").textContent = `Station ${S.code} · ${titleCase(S.name)}${S.prov ? ", " + S.prov : ""}`;
-    $("map-link").href = `https://wateroffice.ec.gc.ca/map/index_e.html?type=historical&target_station=${S.code}`;
     $("ov-wrap").hidden = isMuriel(); $("st-home").hidden = isMuriel();
     $("ov-chk").checked = overlay;
     const appr = S.approvedUntil != null ? `Approved historical data (<a href="https://api.weather.gc.ca/collections/hydrometric-daily-mean">HYDAT</a>) through ${fmtDay(S.approvedUntil)}; ` : "No approved historical data; ";
