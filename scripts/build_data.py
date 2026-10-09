@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
-"""Build the data file for the Muriel Lake water level page.
+"""Build the data files for the Muriel Lake water level page.
 
 Pulls water levels for Water Survey of Canada station 06AC007 (Muriel Lake
 near Gurneyville, AB), merges the approved historical record with the
-provisional real-time record, fills gaps by linear interpolation, and works
-out the quarterly tables, year-to-year changes and July 1 projections.
+provisional real-time record, and writes:
+
+  site/data/lake.json        the merged daily series (the page does all the maths)
+  site/data/stations.json    every hydrometric station, for the page's station search
+  site/data/muriel-lake-water-levels.xlsx
+                             full tables, projections and charts for download
 
 Data sources
   * Approved historical daily means (HYDAT), via the GeoMet OGC API:
@@ -16,7 +20,7 @@ Approved data always wins. Real-time data only fills dates the approved
 record doesn't have yet, so when Environment Canada publishes a new year of
 approved data the page switches to it automatically on the next run.
 
-Uses only the Python standard library. Writes site/data/lake.json.
+Needs openpyxl for the Excel file; everything else is the standard library.
 """
 
 import bisect
@@ -35,6 +39,7 @@ from pathlib import Path
 STATION = "06AC007"
 STATION_NAME = "Muriel Lake near Gurneyville"
 HYDAT_URL = "https://api.weather.gc.ca/collections/hydrometric-daily-mean/items"
+STATIONS_URL = "https://api.weather.gc.ca/collections/hydrometric-stations/items"
 REALTIME_URL = "https://wateroffice.ec.gc.ca/services/real_time_data/csv/inline"
 PAGE_SIZE = 10000
 REALTIME_MONTHS = 19          # WaterOffice keeps roughly 18 months
@@ -45,6 +50,8 @@ MONTH_NAMES = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "O
 PROJECTION_YEARS = 50
 OUT = Path(__file__).resolve().parent.parent / "site" / "data" / "lake.json"
 XLSX = OUT.with_name("muriel-lake-water-levels.xlsx")
+STATIONS_OUT = OUT.with_name("stations.json")
+LAT, LON = 54.1446, -110.7440
 IN_PER_M = 100 / 2.54
 
 
@@ -127,6 +134,22 @@ def fetch_realtime(today):
             n += 1
         print(f"  real-time {start:%Y-%m}: {n} readings")
     return {d: sums[d] / counts[d] for d in sums}
+
+
+def fetch_stations():
+    """All hydrometric stations: [number, name, province, lat, lon, active, real_time]."""
+    text = fetch(STATIONS_URL, {"f": "csv", "limit": 20000,
+                                "properties": "STATION_NUMBER,STATION_NAME,PROV_TERR_STATE_LOC,STATUS_EN,REAL_TIME"})
+    out = []
+    for row in csv.DictReader(io.StringIO(text)):
+        try:
+            out.append([row["STATION_NUMBER"], row["STATION_NAME"].strip(), row["PROV_TERR_STATE_LOC"],
+                        round(float(row["y"]), 4), round(float(row["x"]), 4),
+                        1 if row.get("STATUS_EN") == "Active" else 0, 1 if row.get("REAL_TIME") == "1" else 0])
+        except (KeyError, ValueError):
+            continue
+    out.sort(key=lambda r: r[0])
+    return out
 
 
 # ---------------------------------------------------------------- maths
@@ -275,8 +298,28 @@ def build():
         },
     }
     OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text(json.dumps(data, separators=(",", ":")))
+    # compact daily series for the page: day offsets from t0, levels, provisional flags
+    t0 = dates[0]
+    page = {
+        "station": STATION, "station_name": STATION_NAME, "lat": LAT, "lon": LON,
+        "updated": data["updated"], "approved_until": data["approved_until"],
+        "realtime_note": "Provisional real-time data covers about the last 18 months.",
+        "t0": t0.isoformat(),
+        "d": [(d - t0).days for d in dates],
+        "v": [r(v) for v in levels],
+        "p": "".join("0" if s_ == "approved" else "1" for s_ in sources),
+    }
+    OUT.write_text(json.dumps(page, separators=(",", ":")))
     print(f"Wrote {OUT} ({OUT.stat().st_size / 1024:.0f} KB)")
+    try:
+        st = fetch_stations()
+        if len(st) > 1000:
+            STATIONS_OUT.write_text(json.dumps(st, separators=(",", ":"), ensure_ascii=False))
+            print(f"Wrote {STATIONS_OUT} ({len(st)} stations, {STATIONS_OUT.stat().st_size / 1024:.0f} KB)")
+        else:
+            print(f"Station list looked incomplete ({len(st)} rows); skipped", file=sys.stderr)
+    except Exception as e:  # the page falls back to searching the API directly
+        print(f"Station list failed: {e}", file=sys.stderr)
     write_xlsx(data, dates, levels, sources)
 
 
@@ -287,6 +330,9 @@ def write_xlsx(data, dates, levels, sources):
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils import get_column_letter
+    from openpyxl.chart import BarChart, LineChart, Reference
+    from openpyxl.chart.axis import DateAxis
+    from openpyxl.chart.marker import DataPoint
 
     bold = Font(bold=True)
     head_fill = PatternFill("solid", fgColor="DCE8F5")
@@ -307,22 +353,24 @@ def write_xlsx(data, dates, levels, sources):
     # Daily
     ws = wb.active
     ws.title = "Daily"
-    header(ws, ["Date", "Level (m above sea level)", "vs first reading (m)", "vs first reading (in)", "Source"],
-           {1: 12, 2: 16, 3: 14, 4: 14, 5: 26})
+    header(ws, ["Date", "Level (m above sea level)", "vs first reading (m)", "vs first reading (ft)",
+                "vs first reading (in)", "Source"], {1: 12, 2: 16, 3: 14, 4: 14, 5: 14, 6: 26})
     base = levels[0]
     for d, v, s in zip(dates, levels, sources):
-        ws.append([d, round(v, 3), round(v - base, 3), round((v - base) * IN_PER_M, 1),
+        ws.append([d, round(v, 3), round(v - base, 3), round((v - base) / 0.3048, 3), round((v - base) * IN_PER_M, 1),
                    "Approved (HYDAT)" if s == "approved" else "Provisional (real-time)"])
-    for row in ws.iter_rows(min_row=2, max_col=4):
+    for row in ws.iter_rows(min_row=2, max_col=5):
         row[0].number_format = "yyyy-mm-dd"
-        row[1].number_format = row[2].number_format = "0.000"
-        row[3].number_format = "0.0"
+        row[1].number_format = row[2].number_format = row[3].number_format = "0.000"
+        row[4].number_format = "0.0"
+    ws_daily, n_daily = ws, len(dates)
 
     months = [f"{m} 1" for m in MONTH_NAMES]
     M = data["monthly"]
 
     def month_sheet(title, value, fmt, rises=False):
         ws = wb.create_sheet(title)
+        sheets[title] = ws
         header(ws, ["Year"] + months, {1: 8})
         for q in M:
             ws.append([q["year"]] + [value(q, c) for c in range(12)])
@@ -336,6 +384,7 @@ def write_xlsx(data, dates, levels, sources):
                 elif not rises and q["source"][c] == "interpolated":
                     cell.font = interp_font
 
+    sheets = {}
     month_sheet("1st of month (m)", lambda q, c: q["level"][c], "0.000")
     month_sheet("Year-to-year (cm)", lambda q, c: q["yoy_cm"][c], "+0.0;-0.0;0.0", rises=True)
     month_sheet("Year-to-year (in)",
@@ -369,6 +418,109 @@ def write_xlsx(data, dates, levels, sources):
         ws.append([lt["year"], lt["trend_all"], lt["trend_10"], lt["typical"]])
         for c in (2, 3, 4):
             ws.cell(row=ws.max_row, column=c).number_format = "0.000"
+
+    # data for the July 1 chart: actual July 1 levels, then the projections
+    ws.append([])
+    ws.append(["Year", "Actual July 1 (m)", "Trend, last 10 years (m)", "Typical yearly change (m)"])
+    jstart = ws.max_row
+    for c in range(1, 5):
+        ws.cell(row=jstart, column=c).font, ws.cell(row=jstart, column=c).fill = bold, head_fill
+    lastj = P["last_july"]
+    for q in M:
+        bridge = q["year"] == lastj["year"]  # join the projection lines to the last actual value
+        ws.append([q["year"], q["level"][6], lastj["level"] if bridge else None, lastj["level"] if bridge else None])
+    for lt in P["long_term"]:
+        if lt["year"] > M[-1]["year"]:
+            ws.append([lt["year"], None, lt["trend_10"], lt["typical"]])
+    jend = ws.max_row
+    for row in ws.iter_rows(min_row=jstart + 1, max_row=jend, min_col=2, max_col=4):
+        for cell in row:
+            cell.number_format = "0.000"
+    ws_proj = ws
+
+    # Charts
+    cs = wb.create_sheet("Charts", 0)
+    cs["A1"] = "Charts — Muriel Lake (06AC007). The tables they come from are on the other sheets."
+    cs["A1"].font = Font(bold=True, size=13)
+    cs.sheet_properties.pageSetUpPr.fitToPage = True      # prints/exports the charts on one page
+    cs.page_setup.fitToWidth = cs.page_setup.fitToHeight = 1
+    cs.page_setup.orientation = "landscape"
+    BLUE, ORANGE, GREEN, PURPLE, GREY = "2F6FB3", "D9822B", "2E9A5B", "8B5CC4", "8A94A3"
+
+    def tidy(ch, title, ytitle, xtitle="Year"):
+        ch.title, ch.y_axis.title, ch.x_axis.title = title, ytitle, xtitle
+        ch.width, ch.height = 24, 10
+        ch.x_axis.delete = False
+        ch.y_axis.delete = False
+        ch.x_axis.tickLblPos = "low"          # keep year labels along the bottom, not on the zero line
+        ch.y_axis.number_format = "0.0"
+        if ch.legend is not None:
+            ch.legend.position = "b"
+        return ch
+
+    def daily_chart(col, title, ytitle, colour):
+        ch = tidy(LineChart(), title, ytitle, "Date")
+        ch.y_axis.crossAx = 500
+        ch.x_axis = DateAxis(crossAx=100)
+        ch.x_axis.number_format, ch.x_axis.majorTimeUnit, ch.x_axis.title = "yyyy", "years", "Date"
+        ch.x_axis.majorUnit, ch.x_axis.tickLblPos = 5, "low"
+        ch.x_axis.delete = False
+        ch.add_data(Reference(ws_daily, min_col=col, min_row=1, max_row=n_daily + 1), titles_from_data=True)
+        ch.set_categories(Reference(ws_daily, min_col=1, min_row=2, max_row=n_daily + 1))
+        ser = ch.series[0]
+        ser.graphicalProperties.line.solidFill = colour
+        ser.graphicalProperties.line.width = 15000
+        ser.marker.symbol, ser.smooth = "none", False
+        ch.legend = None
+        return ch
+
+    cs.add_chart(daily_chart(3, "Daily water level vs first reading (m)", "Change (m)", BLUE), "A3")
+    cs.add_chart(daily_chart(4, "Daily water level vs first reading (ft)", "Change (ft)", ORANGE), "P3")
+
+    ch = tidy(LineChart(), "July 1 water level: history and projections", "Level (m above sea level)")
+    ch.add_data(Reference(ws_proj, min_col=2, max_col=4, min_row=jstart, max_row=jend), titles_from_data=True)
+    ch.set_categories(Reference(ws_proj, min_col=1, min_row=jstart + 1, max_row=jend))
+    for ser, colour, dash in zip(ch.series, (BLUE, PURPLE, GREY), (None, "dash", "dash")):
+        ser.graphicalProperties.line.solidFill = colour
+        ser.graphicalProperties.line.width = 22000
+        if dash:
+            ser.graphicalProperties.line.dashStyle = dash
+        ser.marker.symbol, ser.smooth = "none", False
+    ch.display_blanks = "gap"
+    ch.x_axis.tickLblSkip = 5
+    cs.add_chart(ch, "A24")
+
+    tot = sheets["Total change (cm)"]
+    ch = tidy(LineChart(), "Total change since first reading, 1st of Jan / Apr / Jul / Oct (cm)", "Change (cm)")
+    for col, colour in zip((2, 5, 8, 11), (BLUE, ORANGE, GREEN, PURPLE)):
+        ch.add_data(Reference(tot, min_col=col, min_row=1, max_row=tot.max_row), titles_from_data=True)
+        ser = ch.series[-1]
+        ser.graphicalProperties.line.solidFill = colour
+        ser.graphicalProperties.line.width = 20000
+        ser.marker.symbol, ser.smooth = "none", False
+    ch.set_categories(Reference(tot, min_col=1, min_row=2, max_row=tot.max_row))
+    ch.display_blanks = "gap"
+    ch.x_axis.tickLblSkip = 5
+    cs.add_chart(ch, "P24")
+
+    yoy = sheets["Year-to-year (cm)"]
+    for i, (col, name) in enumerate(zip((2, 5, 8, 11), ("Jan 1", "Apr 1", "Jul 1", "Oct 1"))):
+        ch = tidy(BarChart(), f"{name}: change from the year before (cm) — green = rose", "Change (cm)")
+        ch.type, ch.gapWidth = "col", 40
+        ch.add_data(Reference(yoy, min_col=col, min_row=1, max_row=yoy.max_row), titles_from_data=True)
+        ch.set_categories(Reference(yoy, min_col=1, min_row=2, max_row=yoy.max_row))
+        ser = ch.series[0]
+        ser.graphicalProperties.solidFill = ORANGE
+        ser.invertIfNegative = False
+        for idx, q in enumerate(M):
+            v = q["yoy_cm"][col - 2]
+            if v is not None and v > 0:
+                pt = DataPoint(idx=idx)
+                pt.graphicalProperties.solidFill = GREEN
+                ser.dPt.append(pt)
+        ch.legend = None
+        ch.x_axis.tickLblSkip = 5
+        cs.add_chart(ch, ("A", "P")[i % 2] + str(45 + 21 * (i // 2)))
 
     # About
     ws = wb.create_sheet("About")

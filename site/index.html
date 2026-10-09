@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Muriel Lake Water Levels</title>
-<meta name="description" content="Water levels for Muriel Lake, Alberta (station 06AC007), updated weekly from Environment Canada.">
+<meta name="description" content="Water levels for Muriel Lake, Alberta (station 06AC007) and any other Water Survey of Canada station, updated daily from Environment Canada.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M2 20c4-3 8 3 14 0s10 3 14 0v10H2z' fill='%232f6fb3'/%3E%3C/svg%3E">
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
 <style>
@@ -21,10 +21,11 @@
     --s1: #6ea8e8; --s2: #f0a066; --s3: #6fd396; --s4: #b99af0;
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   body { margin: 0; background: var(--bg); color: var(--text);
          font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
   main { max-width: 1440px; margin: 0 auto; padding: 24px 16px 48px; }
-  header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 12px; margin-bottom: 18px; }
+  header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 12px; margin-bottom: 12px; }
   h1 { font-size: 1.7rem; margin: 0; letter-spacing: -0.01em; }
   .sub { color: var(--muted); margin: 2px 0 0; }
   h2 { font-size: 1.15rem; margin: 0 0 4px; }
@@ -33,23 +34,48 @@
   .toggle button { border: 0; background: none; color: var(--muted); padding: 7px 16px; font: inherit; cursor: pointer; }
   .toggle button.on { background: var(--accent); color: #fff; }
   .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  input, select, button { font: inherit; }
+  .field { color: var(--text); background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; }
+  button.field { cursor: pointer; }
+  button.field:disabled { opacity: .45; cursor: default; }
+  button.field.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+
+  /* station picker */
+  .stationbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 6px; font-size: .92rem; }
+  .stationbar > label { color: var(--muted); }
+  .st-wrap { position: relative; flex: 0 1 380px; min-width: 220px; }
+  .st-wrap input { width: 100%; }
+  #st-list { position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% + 4px); margin: 0; padding: 4px 0; list-style: none;
+             background: var(--card); border: 1px solid var(--line); border-radius: 8px; max-height: 320px; overflow-y: auto;
+             box-shadow: 0 8px 24px rgba(0,0,0,.18); }
+  #st-list li { padding: 6px 10px; cursor: pointer; line-height: 1.3; }
+  #st-list li:hover, #st-list li.act { background: var(--accent-soft); }
+  #st-list .code { font-variant-numeric: tabular-nums; color: var(--accent); font-weight: 600; margin-right: 6px; }
+  #st-list .meta { color: var(--muted); font-size: .8rem; }
+  .chk { display: inline-flex; align-items: center; gap: 6px; color: var(--text); }
+  .links { color: var(--muted); }
+  .links a, .note a { color: var(--accent); }
+  .status { font-size: .88rem; color: var(--muted); margin: 0 0 12px; min-height: 1.3em; }
+  .status.err { color: var(--down); }
+
   .daypick { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 10px; color: var(--muted); font-size: .9rem; }
-  .daypick select, .daypick button { font: inherit; color: var(--text); background: var(--card); border: 1px solid var(--line);
-                                     border-radius: 8px; padding: 5px 8px; }
-  .daypick button { cursor: pointer; }
-  .daypick button:disabled { opacity: .45; cursor: default; }
-  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 18px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(185px, 1fr)); gap: 12px; margin-bottom: 18px; }
   .tile { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
   .tile .k { color: var(--muted); font-size: .85rem; }
-  .tile .v { font-size: 1.6rem; font-weight: 650; font-variant-numeric: tabular-nums; }
-  .tile .d { color: var(--muted); font-size: .85rem; }
+  .tile .k select { font-size: .85rem; padding: 1px 4px; }
+  .tile .v { font-size: 1.5rem; font-weight: 650; font-variant-numeric: tabular-nums; line-height: 1.3; margin: 2px 0; }
+  .tile .d { color: var(--muted); font-size: .82rem; }
   .up { color: var(--up); } .down { color: var(--down); }
   section { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px; margin-bottom: 18px; }
-  .chart { width: 100%; height: 380px; }
+  .chart { width: 100%; height: 400px; }
   .tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
   .tabs button { border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 8px;
-                 padding: 6px 12px; font: inherit; cursor: pointer; }
+                 padding: 5px 10px; cursor: pointer; }
   .tabs button.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .rangebar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 6px; color: var(--muted); font-size: .9rem; }
+  .rangebar .sp { width: 8px; }
+  .readout { margin: 0 0 8px; font-size: .95rem; font-variant-numeric: tabular-nums; }
+  .readout b { font-weight: 650; }
   .scroll { overflow-x: auto; max-height: 420px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; }
   table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; font-size: .92rem; }
   th, td { padding: 6px 10px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
@@ -58,27 +84,33 @@
   td.interp { color: var(--interp); font-style: italic; }
   td.rise { background: var(--up-bg); color: var(--up); font-weight: 650; }
   tr.hl td { background: var(--accent-soft); font-weight: 600; }
+  th.sel, td.sel { outline: 2px solid var(--accent); outline-offset: -2px; }
   details summary { cursor: pointer; color: var(--accent); margin: 10px 0; }
   .grid2 { display: grid; grid-template-columns: 1fr; gap: 16px; }
   @media (min-width: 900px) { .grid2 { grid-template-columns: 1fr 1fr; } }
+  .cmp { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0 10px; color: var(--muted); }
+  .cmp-out { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+  .cmp-out div { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  .cmp-out span { display: block; color: var(--muted); font-size: .8rem; }
+  .cmp-out b { font-size: 1.2rem; font-variant-numeric: tabular-nums; }
+  .showrow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 0 10px; color: var(--muted); font-size: .9rem; }
+  .showrow button { border: 1px solid var(--line); background: var(--card); color: var(--muted); border-radius: 999px;
+                    padding: 4px 12px; cursor: pointer; }
+  .showrow button.on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+  .showrow button.on::before { content: "✓ "; }
   footer { color: var(--muted); font-size: .85rem; }
   footer a { color: var(--accent); }
   .error { color: var(--down); }
-  .showrow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 0 10px; color: var(--muted); font-size: .9rem; }
-  .showrow button { border: 1px solid var(--line); background: var(--card); color: var(--muted); border-radius: 999px;
-                    padding: 4px 12px; font: inherit; cursor: pointer; }
-  .showrow button.on { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); font-weight: 600; }
-  .showrow button.on::before { content: "✓ "; }
-  th.sel, td.sel { outline: 2px solid var(--accent); outline-offset: -2px; }
   .download { text-align: center; margin: 24px 0 8px; }
-  .download a { display: inline-block; background: var(--accent); color: #fff; text-decoration: none; font-weight: 600;
-                padding: 10px 20px; border-radius: 10px; }
-  .download a:hover { filter: brightness(1.08); }
+  .download a, .download button { display: inline-block; background: var(--accent); color: #fff; text-decoration: none; font-weight: 600;
+                padding: 10px 20px; border-radius: 10px; border: 0; cursor: pointer; }
+  .download a:hover, .download button:hover { filter: brightness(1.08); }
   .download p { color: var(--muted); font-size: .85rem; margin: 8px 0 0; }
-  /* layout: main column + weather panel on the right (stacks under the summary on narrow screens) */
+
+  /* layout: main column + weather panel on the right; on phones the weather goes to the bottom */
   .layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 18px; }
   .wx { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 18px; }
-  .summary { order: 0; } .rest { order: 1; } .wx { order: 2; }   /* phones: weather after everything else */
+  .summary { order: 0; } .rest { order: 1; } .wx { order: 2; }
   @media (min-width: 1100px) {
     .layout { grid-template-columns: minmax(0, 1fr) 300px; }
     .summary, .rest { grid-column: 1; }
@@ -101,19 +133,31 @@
   .wx-days .hl { white-space: nowrap; } .wx-days .lo { color: var(--muted); }
   .wx-days .pp { color: var(--accent); font-size: .82rem; text-align: right; white-space: nowrap; }
   .wx-src { color: var(--muted); font-size: .78rem; margin: 10px 0 0; }
+
+  /* phones */
+  @media (max-width: 700px) {
+    main { padding: 16px 12px 40px; }
+    h1 { font-size: 1.4rem; }
+    section { padding: 14px 12px; }
+    .chart { height: 300px; }
+    .tile .v { font-size: 1.3rem; }
+    .tabs button { padding: 4px 8px; font-size: .88rem; }
+    /* let a finger drag on a chart scroll the page instead of panning the chart */
+    .js-plotly-plot .plotly .nsewdrag, .js-plotly-plot .plotly .main-svg { touch-action: pan-y !important; }
+  }
 </style>
 </head>
 <body>
 <main>
   <header>
     <div>
-      <h1>Muriel Lake water levels</h1>
+      <h1 id="title">Muriel Lake water levels</h1>
       <p class="sub" id="subtitle">Station 06AC007 · near Gurneyville, Alberta</p>
     </div>
     <div class="controls">
       <div class="toggle" role="group" aria-label="Units">
         <button id="u-metric" class="on">Metric</button>
-        <button id="u-imperial">Inches</button>
+        <button id="u-imperial">Feet &amp; inches</button>
       </div>
       <div class="toggle" role="group" aria-label="Theme">
         <button data-theme-btn="light">Light</button>
@@ -122,20 +166,35 @@
     </div>
   </header>
 
+  <div class="stationbar">
+    <label for="st-input">Station</label>
+    <div class="st-wrap">
+      <input id="st-input" class="field" type="search" autocomplete="off" spellcheck="false"
+             placeholder="Search a lake or river name, or a station number">
+      <ul id="st-list" role="listbox" hidden></ul>
+    </div>
+    <label class="chk" id="ov-wrap" hidden><input type="checkbox" id="ov-chk" checked> Overlay Muriel Lake</label>
+    <button class="field" id="st-home" hidden>Back to Muriel Lake</button>
+    <span class="links">Find stations:
+      <a id="map-link" href="https://wateroffice.ec.gc.ca/map/index_e.html?type=historical&amp;target_station=06AC007" target="_blank" rel="noopener">WaterOffice map</a> ·
+      <a href="https://wateroffice.ec.gc.ca/search/historical_e.html" target="_blank" rel="noopener">WaterOffice search</a></span>
+  </div>
+  <p class="status" id="st-status"></p>
+
   <div class="layout">
   <div class="summary">
-  <div class="daypick">
-    <span>Summary for</span>
-    <select id="pick-month" aria-label="Month"></select>
-    <select id="pick-day" aria-label="Day"></select>
-    <button id="pick-reset">Reset</button>
-  </div>
-  <div class="tiles" id="tiles"></div>
+    <div class="daypick">
+      <span>Summary for</span>
+      <select id="pick-month" class="field" aria-label="Month"></select>
+      <select id="pick-day" class="field" aria-label="Day"></select>
+      <button id="pick-reset" class="field">Latest reading</button>
+    </div>
+    <div class="tiles" id="tiles"></div>
   </div>
 
   <aside class="wx" id="wx" aria-label="Weather forecast">
-    <h2>Weather at the lake</h2>
-    <p class="note" style="margin:0">Forecast for Muriel Lake, near Bonnyville</p>
+    <h2 id="wx-title">Weather at the lake</h2>
+    <p class="note" style="margin:0" id="wx-sub">Forecast for the station’s location</p>
     <div id="wx-body"><p class="note" style="margin-top:12px">Loading forecast…</p></div>
     <p class="wx-src">Forecast from <a href="https://open-meteo.com/">Open-Meteo</a>, refreshed each time the page loads.</p>
   </aside>
@@ -143,8 +202,24 @@
   <div class="rest">
 
   <section>
-    <h2>Every day since 1981</h2>
+    <h2>Change between two dates</h2>
+    <div class="cmp">
+      <span>From</span><input type="date" id="cmp-a" class="field">
+      <span>to</span><input type="date" id="cmp-b" class="field">
+    </div>
+    <div class="cmp-out" id="cmp-out"></div>
+  </section>
+
+  <section>
+    <h2 id="daily-h">Every day</h2>
     <p class="note" id="daily-note"></p>
+    <div class="rangebar" id="d-range">
+      <span>From</span><input type="date" id="d-from" class="field"><span class="sp"></span>
+      <button class="field" data-yrs="1">1 yr</button><button class="field" data-yrs="5">5 yr</button>
+      <button class="field" data-yrs="10">10 yr</button><button class="field" data-yrs="20">20 yr</button>
+      <button class="field" data-yrs="0">All</button>
+    </div>
+    <p class="readout" id="d-readout"></p>
     <div id="chart-daily" class="chart"></div>
   </section>
 
@@ -156,6 +231,12 @@
       <button id="show-total" class="on">Total change (line)</button>
       <button id="show-yoy" class="on">Change vs year before (bars)</button>
     </div>
+    <div class="rangebar" id="c-range">
+      <span>From</span><select id="c-from" class="field" aria-label="From year"></select><span class="sp"></span>
+      <button class="field" data-yrs="10">10 yr</button><button class="field" data-yrs="20">20 yr</button>
+      <button class="field" data-yrs="0">All</button>
+    </div>
+    <p class="readout" id="c-readout"></p>
     <div id="chart-change" class="chart"></div>
     <details>
       <summary>Show year-to-year table (all months)</summary>
@@ -164,7 +245,7 @@
     </details>
   </section>
 
-  <section>
+  <section id="proj-section">
     <h2>July 1 projection</h2>
     <p class="note" id="proj-note"></p>
     <div class="grid2">
@@ -173,7 +254,7 @@
     </div>
     <details>
       <summary>Show 50-year projection table</summary>
-      <p class="note">Three straight-line ways to extend the record. They disagree on purpose: the lake fell for 35 years, then wet years pushed it back up, so the answer depends on how much history you trust. Treat these as “if the recent pattern continued.”</p>
+      <p class="note">Three straight-line ways to extend the record. They disagree on purpose: the answer depends on how much history you trust. Treat these as “if the recent pattern continued.”</p>
       <div class="scroll"><table id="table-long"></table></div>
     </details>
   </section>
@@ -183,84 +264,607 @@
 
   <footer id="footer"></footer>
 
-  <div class="download">
-    <a href="data/muriel-lake-water-levels.xlsx" download>Download all data (Excel)</a>
-    <p>Every daily reading, the 1st-of-month table, year-to-year and total changes (cm and inches), and the July 1 projection.</p>
-  </div>
+  <div class="download" id="download"></div>
 </main>
 
 <script>
 (async function () {
-  const IN_PER_M = 100 / 2.54;
-  let D, units = localGet("units") || "metric";
+  "use strict";
+  // ================================================================ basics
+  const $ = (id) => document.getElementById(id);
+  const DAY = 864e5, CM_PER_IN = 2.54, M_PER_FT = 0.3048;
+  const MURIEL = "06AC007";
+  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const MDAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  const API = "https://api.weather.gc.ca/collections/";
 
   function localGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function localSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
   const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  // dates are whole UTC day numbers
+  const dn = (y, m, d) => Date.UTC(y, m - 1, d) / DAY;
+  const ymd = (t) => { const d = new Date(t * DAY); return [d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate()]; };
+  const iso = (t) => new Date(t * DAY).toISOString().slice(0, 10);
+  const fromIso = (s) => Math.round(Date.parse(String(s).slice(0, 10) + "T00:00:00Z") / DAY);
+  const fmtDay = (t) => new Date(t * DAY).toLocaleDateString("en-CA", { timeZone: "UTC", year: "numeric", month: "short", day: "numeric" });
+  const daysIn = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate();
+  function addMonths(y, m, d, k) {
+    let mm = m - 1 + k, yy = y + Math.floor(mm / 12);
+    mm = ((mm % 12) + 12) % 12 + 1;
+    return dn(yy, mm, Math.min(d, daysIn(yy, mm)));
+  }
+  const r3 = (x) => Math.round(x * 1000) / 1000;
+
+  // ================================================================ units
+  let units = localGet("units") === "imperial" ? "imperial" : "metric";
   const metric = () => units === "metric";
+  const MINUS = "−";
+  const sgn = (x, plus) => x < 0 ? MINUS : (plus && x > 0 ? "+" : "");
+  // metres -> "1 ft 9.4 in"
+  function ftin(m, plus) {
+    let inch = Math.abs(m) * 100 / CM_PER_IN, ft = Math.floor(inch / 12), rem = Math.round((inch - ft * 12) * 10) / 10;
+    if (rem >= 12) { ft += 1; rem = 0; }
+    return sgn(m, plus) + (ft ? `${ft.toLocaleString("en-CA")} ft ` : "") + `${rem.toFixed(1)} in`;
+  }
+  // a change in level (metres) as text
+  function fmtChange(m, plus = true) {
+    if (m == null || isNaN(m)) return "–";
+    if (!metric()) return ftin(m, plus);
+    const a = Math.abs(m);
+    return a < 1 ? `${sgn(m, plus)}${(a * 100).toFixed(1)} cm` : `${sgn(m, plus)}${a.toFixed(2)} m`;
+  }
+  // a change for table cells: cm in metric, ft & in otherwise
+  const fmtCell = (m) => m == null ? "" : metric() ? `${sgn(m, true)}${(Math.abs(m) * 100).toFixed(1)}` : ftin(m, true);
+  const cellUnit = () => metric() ? "cm" : "ft & in";
+  const fmtElev = (m) => metric() ? `${m.toFixed(3)} m` : ftin(m);
+  // chart axis values
+  const AX = {
+    big: { m: (x) => x, unit: () => metric() ? "m" : "ft", conv: (x) => metric() ? x : x / M_PER_FT, fmt: () => metric() ? ".2f" : ".1f" },
+    small: { unit: () => metric() ? "cm" : "in", conv: (x) => metric() ? x * 100 : x * 100 / CM_PER_IN, fmt: () => ".1f" },
+  };
 
-  // level differences (stored in metres or cm) -> display
-  const lvl = (m) => m == null ? null : (metric() ? +m.toFixed(3) : +(m * IN_PER_M).toFixed(1));
-  const chg = (cm) => cm == null ? null : (metric() ? cm : +(cm / 2.54).toFixed(1));
-  const lvlUnit = () => metric() ? "m" : "in";
-  const chgUnit = () => metric() ? "cm" : "in";
-  const fmtLvl = (m) => m == null ? "" : (metric() ? lvl(m).toFixed(3) : lvl(m).toFixed(1));
-  const fmtChg = (cm) => cm == null ? "" : (chg(cm) > 0 ? "+" : "") + chg(cm).toFixed(1);
-  const fmtDate = (s) => new Date(s + "T12:00:00").toLocaleDateString("en-CA", { year: "numeric", month: "short", day: "numeric" });
-
-  // ---- theme: light or dark (first visit follows the device, then your choice is remembered)
+  // ================================================================ theme
   let theme = localGet("theme");
   if (theme !== "light" && theme !== "dark")
     theme = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   function applyTheme() {
     document.documentElement.dataset.theme = theme;
-    document.querySelectorAll("[data-theme-btn]").forEach(b => b.classList.toggle("on", b.dataset.themeBtn === theme));
+    document.querySelectorAll("[data-theme-btn]").forEach((b) => b.classList.toggle("on", b.dataset.themeBtn === theme));
   }
   applyTheme();
 
-  // ---- weather forecast (live from Open-Meteo, independent of the lake data)
-  let WX = null, wxFailed = false;
+  // ================================================================ data loading
+  // A station series: t = day numbers, v = levels (m), p = provisional flags
+  function makeSeries(meta, t, v, p) {
+    return Object.assign({ t, v, p, first: t[0], last: t[t.length - 1] }, meta);
+  }
+
+  async function loadMuriel() {
+    const j = await (await fetch("data/lake.json", { cache: "no-cache" })).json();
+    const t0 = fromIso(j.t0), n = j.d.length;
+    const t = new Float64Array(n), v = new Float64Array(n), p = new Uint8Array(n);
+    for (let i = 0; i < n; i++) { t[i] = t0 + j.d[i]; v[i] = j.v[i]; p[i] = j.p.charCodeAt(i) === 49; }
+    return makeSeries({
+      code: j.station, name: "MURIEL LAKE NEAR GURNEYVILLE", prov: "AB", lat: j.lat, lon: j.lon,
+      approvedUntil: fromIso(j.approved_until), updated: j.updated, realtime18: true,
+    }, t, v, p);
+  }
+
+  function parseCsv(text) {
+    const lines = text.replace(/^﻿/, "").split(/\r?\n/).filter((l) => l.length);
+    if (!lines.length) return { head: [], rows: [] };
+    return { head: lines[0].split(","), rows: lines.slice(1).map((l) => l.split(",")) };
+  }
+  async function getText(url) {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.text();
+  }
+  async function pagedCsv(collection, params, maxPages) {
+    const all = []; let head = null;
+    for (let page = 0; page < maxPages; page++) {
+      const q = new URLSearchParams(Object.assign({ f: "csv", limit: 10000, offset: page * 10000 }, params));
+      const { head: h, rows } = parseCsv(await getText(`${API}${collection}/items?${q}`));
+      head = head || h; all.push(...rows);
+      if (rows.length < 10000) break;
+    }
+    return { head: head || [], rows: all };
+  }
+
+  let STATIONS = null, stationsLoading = null;
+  function loadStations() {
+    if (!stationsLoading) stationsLoading = fetch("data/stations.json").then((r) => r.ok ? r.json() : null)
+      .then((j) => { STATIONS = j; return j; }).catch(() => null);
+    return stationsLoading;
+  }
+  async function stationMeta(code) {
+    await loadStations();
+    const s = STATIONS && STATIONS.find((r) => r[0] === code);
+    if (s) return { code, name: s[1], prov: s[2], lat: s[3], lon: s[4], active: !!s[5], rt: !!s[6] };
+    const j = await (await fetch(`${API}hydrometric-stations/items?f=json&STATION_NUMBER=${encodeURIComponent(code)}`)).json();
+    const f = j.features && j.features[0];
+    if (!f) return null;
+    return { code, name: f.properties.STATION_NAME, prov: f.properties.PROV_TERR_STATE_LOC,
+             lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0], active: f.properties.STATUS_EN === "Active",
+             rt: f.properties.REAL_TIME === 1 };
+  }
+
+  async function loadStation(code) {
+    const meta = await stationMeta(code);
+    if (!meta) throw new Error(`Station ${code} wasn’t found.`);
+    // approved daily means
+    const h = await pagedCsv("hydrometric-daily-mean", { STATION_NUMBER: code, sortby: "DATE", properties: "DATE,LEVEL" }, 8);
+    const di = h.head.indexOf("DATE"), li = h.head.indexOf("LEVEL");
+    const byDay = new Map();
+    for (const r of h.rows) {
+      const lv = parseFloat(r[li]);
+      if (r[di] && !isNaN(lv)) byDay.set(fromIso(r[di]), [lv, 0]);
+    }
+    const approvedUntil = byDay.size ? Math.max(...byDay.keys()) : null;
+    // last ~30 days of real-time readings, averaged to local-standard-time days
+    let rtFrom = null;
+    try {
+      const rt = await pagedCsv("hydrometric-realtime", { STATION_NUMBER: code, sortby: "DATETIME", properties: "DATETIME,LEVEL" }, 2);
+      const ti = rt.head.indexOf("DATETIME"), vi = rt.head.indexOf("LEVEL");
+      const off = Math.round(-meta.lon / 15) / 24;   // standard-time offset from UTC, in days
+      const sums = new Map();
+      for (const r of rt.rows) {
+        const lv = parseFloat(r[vi]); if (!r[ti] || isNaN(lv)) continue;
+        const day = Math.floor(Date.parse(r[ti]) / DAY - off);
+        const s = sums.get(day) || [0, 0]; s[0] += lv; s[1] += 1; sums.set(day, s);
+      }
+      for (const [day, [sum, n]] of sums) {
+        if (!byDay.has(day)) { byDay.set(day, [sum / n, 1]); rtFrom = rtFrom == null ? day : Math.min(rtFrom, day); }
+      }
+    } catch (e) { console.warn("real-time", e); }
+    if (!byDay.size) throw new Error(`No water level records for ${code}. It may only measure river flow.`);
+    const days = [...byDay.keys()].sort((a, b) => a - b), n = days.length;
+    const t = new Float64Array(n), v = new Float64Array(n), p = new Uint8Array(n);
+    days.forEach((d, i) => { t[i] = d; v[i] = byDay.get(d)[0]; p[i] = byDay.get(d)[1]; });
+    return makeSeries(Object.assign(meta, { approvedUntil, rtFrom, updated: new Date().toISOString() }), t, v, p);
+  }
+
+  // ================================================================ calculations
+  // level on a day: the reading if there is one, otherwise a straight line between neighbours
+  function levelOn(S, t) {
+    if (t < S.first || t > S.last) return null;
+    let lo = 0, hi = S.t.length - 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (S.t[mid] === t) return { v: S.v[mid], measured: true, prov: !!S.p[mid] };
+      if (S.t[mid] < t) lo = mid + 1; else hi = mid - 1;
+    }
+    const f = (t - S.t[hi]) / (S.t[lo] - S.t[hi]);
+    return { v: S.v[hi] + (S.v[lo] - S.v[hi]) * f, measured: false, prov: false };
+  }
+
+  // level on the 1st of every month, with total change (since the first value in each column)
+  // and change from the year before — the same tables the Excel download has
+  function monthlyTable(S) {
+    const y0 = ymd(S.first)[0], y1 = ymd(S.last)[0], rows = [];
+    for (let y = y0; y <= y1; y++) {
+      const level = [], src = [];
+      for (let m = 1; m <= 12; m++) {
+        const L = levelOn(S, dn(y, m, 1));
+        level.push(L ? r3(L.v) : null);
+        src.push(L ? (L.measured ? (L.prov ? "measured (provisional)" : "measured") : "interpolated") : null);
+      }
+      rows.push({ year: y, level, src });
+    }
+    const first = [...Array(12).keys()].map((c) => { const r = rows.find((q) => q.level[c] != null); return r ? r.level[c] : null; });
+    rows.forEach((q, i) => {
+      q.total = q.level.map((v, c) => v == null ? null : v - first[c]);
+      q.yoy = q.level.map((v, c) => (v == null || !i || rows[i - 1].level[c] == null) ? null : v - rows[i - 1].level[c]);
+    });
+    return { rows, first };
+  }
+
+  function percentile(vals, p) {
+    const s = [...vals].sort((a, b) => a - b), pos = (s.length - 1) * p, i = Math.floor(pos);
+    return s[i] + (s[Math.min(i + 1, s.length - 1)] - s[i]) * (pos - i);
+  }
+  const median = (vals) => percentile(vals, 0.5);
+  function linearFit(xs, ys) {
+    const mx = xs.reduce((a, b) => a + b, 0) / xs.length, my = ys.reduce((a, b) => a + b, 0) / ys.length;
+    let sxy = 0, sxx = 0;
+    xs.forEach((x, i) => { sxy += (x - mx) * (ys[i] - my); sxx += (x - mx) ** 2; });
+    const slope = sxy / sxx;
+    return [slope, my - slope * mx];
+  }
+
+  // July 1 projection (same method as the original Google Sheet and the Excel file)
+  function projection(M) {
+    const QM = [0, 3, 6, 9];
+    const Q = M.rows.map((r) => ({ year: r.year, level: QM.map((c) => r.level[c]) }));
+    const last = Q[Q.length - 1];
+    const ac = [3, 2, 1, 0].find((c) => last.level[c] != null);
+    if (ac == null) return null;
+    const anchor = last.level[ac], shift = ac >= 2 ? 1 : 0, targetYear = last.year + shift;
+    const deltas = [];
+    Q.forEach((q, i) => {
+      const j = i + shift;
+      if (j < Q.length && q.level[ac] != null && Q[j].level[2] != null) deltas.push(Q[j].level[2] - q.level[ac]);
+    });
+    const jul = Q.filter((q) => q.level[2] != null).map((q) => [q.year, q.level[2]]);
+    if (deltas.length < 3 || jul.length < 3) return null;
+    const [lastJulYear, lastJul] = jul[jul.length - 1];
+    const scenarios = [["Driest on record", 0], ["Dry year", .1], ["Below normal", .25], ["Typical (median)", .5],
+                       ["Above normal", .75], ["Wet year", .9], ["Wettest on record", 1]].map(([name, p]) => {
+      const lev = anchor + percentile(deltas, p);
+      return { name, p: Math.round(p * 100), level: lev, change: lev - anchor, vsLastJul: lev - lastJul };
+    });
+    const ys = jul.map((r) => r[0]), vs = jul.map((r) => r[1]);
+    const [sa, ia] = linearFit(ys, vs), [s10, i10] = linearFit(ys.slice(-10), vs.slice(-10));
+    const medChange = median(vs.slice(1).map((v, i) => v - vs[i]));
+    const longTerm = [];
+    for (let y = targetYear; y < targetYear + 50; y++)
+      longTerm.push({ year: y, trendAll: sa * y + ia, trend10: s10 * y + i10, typical: lastJul + medChange * (y - lastJulYear) });
+    return { anchorT: dn(last.year, QM[ac] + 1, 1), anchor, targetYear, n: deltas.length, lastJulYear, lastJul,
+             firstJul: jul[0], scenarios, medChange, longTerm };
+  }
+
+  // ================================================================ state
+  let S = null, M = null, P = null;     // current station, its monthly table and projection
+  let MU = null, MUM = null;            // Muriel Lake (for the overlay)
+  let overlay = true;
+  let pick = null;                      // {m, d} for the summary; default = latest reading
+  let lookback = +(localGet("lookback") || 1);
+  let cmpA = null, cmpB = null;
+  let dailyFrom = null, changeFrom = null;
+  let changeIdx = new Date().getMonth(), showTotal = true, showYoy = true;
+  const narrow = () => window.matchMedia("(max-width: 700px)").matches;
+  const isMuriel = () => S && S.code === MURIEL;
+  const showOverlay = () => overlay && MU && S && !isMuriel();
+
+  function titleCase(s) {
+    return s.toLowerCase().replace(/(^|[\s(\-\/])([a-zà-ÿ])/g, (m, a, b) => a + b.toUpperCase())
+      .replace(/\b(At|Near|Of|Above|Below|In|The|And|De|Du|La|Le|Des|En|Aux|Au|A)\b/g, (w, _, i) => i ? w.toLowerCase() : w);
+  }
+  function shortName(st) {
+    if (st.code === MURIEL) return "Muriel Lake";
+    const t = titleCase(st.name);
+    return t.split(/ (?:near|at|above|below|in|de|du|à|a|en) /)[0];
+  }
+
+  // ================================================================ charts: shared bits
+  function layout(extra) {
+    const grid = css("--line"), text = css("--text"), muted = css("--muted"), n = narrow();
+    const base = {
+      margin: n ? { l: 46, r: 12, t: 6, b: 32 } : { l: 60, r: 20, t: 10, b: 40 },
+      paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+      font: { family: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif", color: text, size: n ? 11 : 12 },
+      xaxis: { gridcolor: grid, linecolor: grid, tickfont: { color: muted }, fixedrange: n },
+      yaxis: { gridcolor: grid, zerolinecolor: muted, tickfont: { color: muted }, fixedrange: n },
+      legend: n ? { orientation: "h", y: 1.12, x: 0, font: { size: 10 } } : { orientation: "h", y: -0.15 },
+      hovermode: "x unified",
+      hoverlabel: { bgcolor: css("--card"), bordercolor: css("--line"), font: { color: text, size: 12 } },
+      dragmode: n ? false : "zoom",
+    };
+    const bx = base.xaxis, by = base.yaxis;
+    const out = Object.assign(base, extra || {});
+    if (extra && extra.yaxis) out.yaxis = Object.assign({}, by, extra.yaxis);
+    if (extra && extra.xaxis) out.xaxis = Object.assign({}, bx, extra.xaxis);
+    if (out.yaxis2) out.yaxis2.fixedrange = n;
+    return out;
+  }
+  const cfg = () => narrow()
+    ? { displayModeBar: false, responsive: true, scrollZoom: false, doubleClick: false }
+    : { displaylogo: false, responsive: true, modeBarButtonsToRemove: ["lasso2d", "select2d", "autoScale2d"] };
+  function yRange(lists) {
+    let lo = Infinity, hi = -Infinity;
+    for (const arr of lists) for (const v of arr) if (v != null && !isNaN(v)) { if (v < lo) lo = v; if (v > hi) hi = v; }
+    if (!isFinite(lo)) return undefined;
+    const pad = Math.max((hi - lo) * 0.08, 1e-3);
+    return [lo - pad, hi + pad];
+  }
+  let quiet = false;   // ignore relayout events we caused ourselves
+  function safe(fn, chartId) {
+    try { fn(); } catch (e) {
+      console.error(e);
+      if (chartId) $(chartId).innerHTML =
+        '<p class="error">This chart could not be drawn (' + (window.Plotly ? esc(e.message) : "the charting library did not load") + ').</p>';
+    }
+  }
+
+  // ================================================================ summary tiles
+  function tiles() {
+    const [ly, lm, ld] = ymd(S.last);
+    const m = pick ? pick.m : lm, d = pick ? pick.d : ld;
+    const isLatest = !pick || (m === lm && d === ld);
+    const Y = dn(ly, m, d) <= S.last ? ly : ly - 1;
+    const t = dn(Y, m, d), now = levelOn(S, t), prev = levelOn(S, dn(Y - 1, m, d));
+    const label = `${MONTHS[m - 1]} ${d}`;
+    let y0 = ymd(S.first)[0]; if (!levelOn(S, dn(y0, m, d))) y0 += 1;
+    const first = levelOn(S, dn(y0, m, d));
+    const back = levelOn(S, addMonths(Y, m, d, -lookback));
+    const cls = (v) => v > 0 ? "up" : v < 0 ? "down" : "";
+    if (!now) { $("tiles").innerHTML = `<div class="tile"><div class="k">No data for ${label}</div></div>`; return; }
+    const yoy = prev ? now.v - prev.v : null, tot = first ? now.v - first.v : null, lb = back ? now.v - back.v : null;
+
+    // outlook: next July 1, from the latest reading, using how the lake moved over the same calendar stretch each past year
+    const tY = S.last >= dn(ly, 7, 1) ? ly + 1 : ly, k = tY - ly, deltas = [];
+    for (let y = ymd(S.first)[0]; dn(y + k, 7, 1) <= S.last; y++) {
+      const a = levelOn(S, dn(y, lm, ld)), b = levelOn(S, dn(y + k, 7, 1));
+      if (a && b) deltas.push(b.v - a.v);
+    }
+    const jy = S.last >= dn(ly, 7, 1) ? ly : ly - 1, lastJul = levelOn(S, dn(jy, 7, 1)), latest = S.v[S.v.length - 1];
+    let outlook = `<div class="v">–</div><div class="d">Not enough history</div>`;
+    if (deltas.length >= 3 && lastJul) {
+      const at = (p) => latest + percentile(deltas, p) - lastJul.v;
+      outlook = `<div class="v">${fmtChange(at(.5))}</div>
+        <div class="d">vs July 1, ${jy} · range ${fmtChange(at(.1))} to ${fmtChange(at(.9))} · ${deltas.length} yrs of history</div>`;
+    }
+    const opts = [1, 2, 3, 6, 12, 24].map((x) => `<option value="${x}" ${x === lookback ? "selected" : ""}>${x} month${x > 1 ? "s" : ""}</option>`).join("");
+    $("tiles").innerHTML = `
+      <div class="tile"><div class="k">${isLatest ? "Latest reading" : "Level"} · ${label}, ${Y}</div>
+        <div class="v">${fmtElev(now.v)}</div>
+        <div class="d">${now.measured ? "Measured" : "Interpolated"}${now.prov ? " · provisional" : ""} · elevation above sea level</div></div>
+      <div class="tile"><div class="k">${label}, ${Y} vs a year earlier</div>
+        <div class="v ${cls(yoy)}">${fmtChange(yoy)}</div>
+        <div class="d">${yoy == null ? "No reading a year earlier" : yoy > 0 ? "The lake rose" : "The lake fell"}</div></div>
+      <div class="tile"><div class="k">${label}, ${Y} vs first ${label} on record</div>
+        <div class="v ${cls(tot)}">${fmtChange(tot)}</div>
+        <div class="d">Record starts ${y0}</div></div>
+      <div class="tile"><div class="k">${lb == null ? "Change" : lb >= 0 ? "Gained" : "Lost"} in the last <select class="field" id="lookback" aria-label="Months">${opts}</select></div>
+        <div class="v ${cls(lb)}">${fmtChange(lb)}</div>
+        <div class="d">${back ? `Since ${fmtDay(addMonths(Y, m, d, -lookback))}` : "Before the record starts"}</div></div>
+      <div class="tile"><div class="k">Typical outlook, July 1, ${tY}</div>${outlook}</div>`;
+  }
+
+  // ================================================================ two-date comparison
+  function compare() {
+    const a = levelOn(S, cmpA), b = levelOn(S, cmpB);
+    const desc = (L) => L ? (L.measured ? (L.prov ? "measured, provisional" : "measured") : "interpolated") : "no data";
+    if (!a || !b) {
+      $("cmp-out").innerHTML = `<p class="note">Pick dates between ${fmtDay(S.first)} and ${fmtDay(S.last)}.</p>`;
+      return;
+    }
+    const diff = b.v - a.v, days = cmpB - cmpA, cls = diff > 0 ? "up" : diff < 0 ? "down" : "";
+    const perYear = days ? diff / (Math.abs(days) / 365.25) : null;
+    $("cmp-out").innerHTML = `
+      <div><span>${fmtDay(cmpA)} (${desc(a)})</span><b>${fmtElev(a.v)}</b></div>
+      <div><span>${fmtDay(cmpB)} (${desc(b)})</span><b>${fmtElev(b.v)}</b></div>
+      <div><span>Change${days ? ` over ${Math.abs(days).toLocaleString("en-CA")} days` : ""}</span><b class="${cls}">${fmtChange(diff)}</b></div>
+      ${Math.abs(days) >= 60 ? `<div><span>Average per year</span><b>${fmtChange(perYear)}</b></div>` : ""}`;
+  }
+
+  // ================================================================ daily chart
+  let dailyCache = null;
+  function dailyChart() {
+    const conv = AX.big.conv, unit = AX.big.unit(), fmt = AX.big.fmt();
+    let baseS = S.v[0], baseM = null, baseT = S.first, ov = false;
+    if (showOverlay()) {
+      const t = Math.max(S.first, MU.first), a = levelOn(S, t), b = levelOn(MU, t);
+      if (a && b) { ov = true; baseT = t; baseS = a.v; baseM = b.v; }   // records must overlap to compare
+    }
+    $("daily-h").textContent = `Every day since ${ymd(S.first)[0]}`;
+    $("daily-note").textContent = `Level compared with ${ov ? "each lake’s level on " + fmtDay(baseT) : "the first reading (" + fmtDay(S.first) + ")"}. ` +
+      (narrow() ? "Tap the chart for values; use From / 1 yr / 5 yr… to change the range." : "Drag across the chart to zoom; double-click to reset.");
+    const latestS = S.v[S.v.length - 1], latestLbl = fmtDay(S.last);
+    const mk = (X, base, latest, name, colour, dash) => {
+      const n = X.t.length, x = new Array(n), y = new Array(n), cd = new Array(n);
+      for (let i = 0; i < n; i++) {
+        x[i] = iso(X.t[i]); y[i] = conv(X.v[i] - base);
+        cd[i] = `${esc(name)}: ${fmtChange(X.v[i] - base)} (${fmtElev(X.v[i])}${X.p[i] ? ", provisional" : ""})` +
+                `<br>then → ${fmtDay(X.last)}: <b>${fmtChange(latest - X.v[i])}</b>`;
+      }
+      return { x, y, customdata: cd, type: "scattergl", mode: "lines", name, line: { color: colour, width: 1.6, dash },
+               hovertemplate: `%{customdata}<extra></extra>` };
+    };
+    const traces = [mk(S, baseS, latestS, shortName(S), css("--s1"))];
+    if (ov) traces.push(mk(MU, baseM, MU.v[MU.v.length - 1], "Muriel Lake", css("--s2"), "dot"));
+    dailyCache = traces;
+    const from = Math.max(dailyFrom == null ? S.first : dailyFrom, S.first);
+    const visible = traces.map((tr) => tr.y.filter((_, i) => fromIso(tr.x[i]) >= from));
+    quiet = true;
+    Plotly.react("chart-daily", traces, layout({
+      xaxis: { type: "date", range: [iso(from - 2), iso(S.last + 5)], hoverformat: "%b %-d, %Y" },
+      yaxis: { title: { text: `Change (${unit})` }, range: yRange(visible) },
+      showlegend: ov,
+    }), cfg()).then(() => { quiet = false; });
+    dailyReadout(from);
+    $("d-from").value = iso(from); $("d-from").min = iso(S.first); $("d-from").max = iso(S.last);
+  }
+  function dailyReadout(from) {
+    from = Math.max(from, S.first);
+    const a = levelOn(S, from), b = S.v[S.v.length - 1];
+    let txt = `${fmtDay(from)} → ${fmtDay(S.last)} (latest): <b class="${b - a.v > 0 ? "up" : "down"}">${fmtChange(b - a.v)}</b>`;
+    if (showOverlay()) {
+      const am = levelOn(MU, Math.max(from, MU.first));
+      if (am) txt += ` &nbsp;·&nbsp; Muriel Lake: <b>${fmtChange(MU.v[MU.v.length - 1] - am.v)}</b>`;
+    }
+    $("d-readout").innerHTML = txt;
+    document.querySelectorAll("#d-range button").forEach((b) => b.classList.remove("on"));
+  }
+  function setDailyFrom(t) { dailyFrom = t; safe(dailyChart, "chart-daily"); }
+
+  // ================================================================ change chart (1st of each month)
+  function changeChart() {
+    const c = changeIdx, R = M.rows;
+    const withVal = R.filter((q) => q.level[c] != null);
+    if (!withVal.length) { $("chart-change").innerHTML = '<p class="note">No data for this month.</p>'; return; }
+    const firstY = withVal[0].year, lastRow = withVal[withVal.length - 1], lastY = lastRow.year;
+    let baseYear = firstY, baseMu = null;
+    const muRows = showOverlay() ? MUM.rows.filter((q) => q.level[c] != null) : [];
+    if (showOverlay() && muRows.length) {
+      baseYear = Math.max(firstY, muRows[0].year);
+      baseMu = MUM.rows.find((q) => q.year === baseYear)?.level[c] ?? null;
+      if (baseMu == null || R.find((q) => q.year === baseYear)?.level[c] == null) { baseYear = firstY; baseMu = null; }
+    }
+    const baseS = R.find((q) => q.year === baseYear)?.level[c] ?? null;
+    const name = MONTHS[c] + " 1", latestLbl = `${name}, ${lastY}`;
+    $("change-note").textContent = `${name} each year. Line: total change since ${name}, ${baseYear}${baseMu != null ? " (first year both lakes have data)" : " (first on record)"}. ` +
+      `Bars: change from ${name} the year before; green = the lake rose.`;
+    const yrs = R.map((q) => q.year);
+    const both = showTotal && showYoy, traces = [];
+    const big = AX.big, small = AX.small;
+    const toLatest = R.map((q) => q.level[c] == null ? "" : `then → ${latestLbl}: ${fmtChange(lastRow.level[c] - q.level[c])}`);
+    if (showYoy) {
+      const yv = R.map((q) => q.yoy[c] == null ? null : small.conv(q.yoy[c]));
+      traces.push({ x: yrs, y: yv, type: "bar", name: "vs year before", yaxis: both ? "y2" : "y",
+        marker: { color: yv.map((v) => v > 0 ? css("--up") : css("--down")), opacity: 0.75 },
+        customdata: toLatest,
+        hovertemplate: `vs year before: %{y:+.1f} ${small.unit()}` + (showTotal ? "" : "<br>%{customdata}") + "<extra></extra>" });
+    }
+    if (showTotal) {
+      traces.push({ x: yrs, y: R.map((q) => q.level[c] == null || baseS == null ? null : big.conv(q.level[c] - baseS)),
+        type: "scatter", mode: "lines+markers", name: baseMu != null ? shortName(S) : "Total change",
+        line: { color: css("--s1"), width: 3 }, marker: { size: 4 }, customdata: toLatest,
+        hovertemplate: `Total: %{y:+${big.fmt()}} ${big.unit()}<br>%{customdata}<extra></extra>` });
+      if (showOverlay() && baseMu != null) {
+        traces.push({ x: MUM.rows.map((q) => q.year), y: MUM.rows.map((q) => q.level[c] == null ? null : big.conv(q.level[c] - baseMu)),
+          type: "scatter", mode: "lines", name: "Muriel Lake", line: { color: css("--s2"), width: 2, dash: "dot" },
+          hovertemplate: `Muriel Lake: %{y:+${big.fmt()}} ${big.unit()}<extra></extra>` });
+      }
+    }
+    const from = Math.max(changeFrom == null ? firstY : changeFrom, firstY);
+    const vis = (tr) => tr.y.filter((_, i) => tr.x[i] >= from);
+    const left = traces.filter((t) => (t.yaxis || "y") === "y"), right = traces.filter((t) => t.yaxis === "y2");
+    const ex = {
+      xaxis: { range: [from - 0.6, lastY + 0.6] },
+      yaxis: { title: { text: showTotal ? `Total change (${big.unit()})` : `Change vs year before (${small.unit()})` }, range: yRange(left.map(vis)) },
+      margin: narrow() ? { l: 46, r: both ? 40 : 12, t: 6, b: 32 } : { l: 60, r: both ? 60 : 20, t: 10, b: 40 },
+    };
+    if (both) ex.yaxis2 = { title: { text: `Year-to-year (${small.unit()})` }, overlaying: "y", side: "right", showgrid: false,
+                            zerolinecolor: css("--muted"), tickfont: { color: css("--muted") }, range: yRange(right.map(vis)) };
+    quiet = true;
+    Plotly.react("chart-change", traces, layout(ex), cfg()).then(() => { quiet = false; });
+    changeReadout(from);
+
+    // year picker
+    $("c-from").innerHTML = withVal.map((q) => `<option value="${q.year}" ${q.year === from ? "selected" : ""}>${q.year}</option>`).join("");
+
+    // table (all months)
+    const head = `<thead><tr><th>Year</th>${MONTHS.map((n, i) => `<th class="${i === c ? "sel" : ""}">${n} 1 (${cellUnit()})</th>`).join("")}</tr></thead>`;
+    const body = [...R].reverse().map((q) => `<tr><td>${q.year}</td>${q.yoy.map((v, i) => {
+      const cl = [v > 0 ? "rise" : "", i === c ? "sel" : "", v != null && v <= 0 && q.src[i] === "interpolated" ? "interp" : ""].join(" ").trim();
+      return `<td class="${cl}">${fmtCell(v)}</td>`;
+    }).join("")}</tr>`).join("");
+    $("table-change").innerHTML = head + `<tbody>${body}</tbody>`;
+  }
+  function changeReadout(from) {
+    const c = changeIdx, R = M.rows.filter((q) => q.level[c] != null);
+    const a = R.find((q) => q.year >= from) || R[0], b = R[R.length - 1], name = MONTHS[c] + " 1";
+    const d = b.level[c] - a.level[c];
+    $("c-readout").innerHTML = `${name}, ${a.year} → ${name}, ${b.year} (most recent): <b class="${d > 0 ? "up" : "down"}">${fmtChange(d)}</b>`;
+    document.querySelectorAll("#c-range button").forEach((x) => x.classList.remove("on"));
+  }
+  function setChangeFrom(y) { changeFrom = y; safe(changeChart, "chart-change"); }
+
+  // ================================================================ projection
+  function projectionView() {
+    if (!P) { $("proj-section").hidden = true; return; }
+    $("proj-section").hidden = false;
+    const [fy, base] = P.firstJul, baseLbl = `July 1, ${fy}`;
+    $("proj-note").textContent =
+      `Starting from the ${fmtDay(P.anchorT)} reading, this adds how much the lake changed between that date and the next July 1 in each of ${P.n} past years. It’s statistics from past years, not a weather forecast; winter snowpack matters most.`;
+    $("table-scen").innerHTML =
+      `<thead><tr><th>July 1, ${P.targetYear}</th><th>Percentile</th><th>vs ${fmtDay(P.anchorT)}</th><th>vs July 1, ${P.lastJulYear}</th></tr></thead><tbody>` +
+      P.scenarios.map((s) => `<tr class="${s.p === 50 ? "hl" : ""}"><td>${s.name}</td><td>${s.p}%</td><td>${fmtChange(s.change)}</td><td>${fmtChange(s.vsLastJul)}</td></tr>`).join("") + "</tbody>";
+
+    const big = AX.big, rel = (v) => big.conv(v - base), f = big.fmt(), u = big.unit();
+    const jul = M.rows.filter((q) => q.level[6] != null);
+    const join = (key) => ({ x: [P.lastJulYear, ...P.longTerm.map((r) => r.year)], y: [rel(P.lastJul), ...P.longTerm.map((r) => rel(r[key]))] });
+    const typ = P.scenarios[3], dry = P.scenarios[1], wet = P.scenarios[5];
+    Plotly.react("chart-proj", [
+      { x: jul.map((q) => q.year), y: jul.map((q) => rel(q.level[6])), name: "Actual July 1", mode: "lines+markers",
+        line: { color: css("--s1"), width: 3 }, marker: { size: 4 }, hovertemplate: `Actual: %{y:+${f}} ${u}<extra></extra>` },
+      Object.assign(join("trend10"), { name: "Trend, last 10 yrs", mode: "lines", line: { color: css("--s4"), dash: "dash", width: 2 },
+        hovertemplate: `10-yr trend: %{y:+${f}} ${u}<extra></extra>` }),
+      Object.assign(join("typical"), { name: "Typical yearly change", mode: "lines", line: { color: css("--muted"), dash: "dash", width: 2 },
+        hovertemplate: `Typical change: %{y:+${f}} ${u}<extra></extra>` }),
+      { x: [P.targetYear], y: [rel(typ.level)], name: "Next July 1 (dry–wet range)", mode: "markers",
+        marker: { color: css("--s3"), size: 10, symbol: "diamond" },
+        error_y: { type: "data", symmetric: false, array: [rel(wet.level) - rel(typ.level)], arrayminus: [rel(typ.level) - rel(dry.level)], color: css("--s3") },
+        hovertemplate: `Typical: %{y:+${f}} ${u}<extra></extra>` },
+    ], layout({ yaxis: { title: { text: `vs ${baseLbl} (${u})` } } }), cfg());
+
+    const cell = (v) => metric() ? `${sgn(v - base, true)}${Math.abs(v - base).toFixed(3)}` : ftin(v - base, true);
+    $("table-long").innerHTML =
+      `<thead><tr><th>July 1</th><th>Trend, all years</th><th>Trend, last 10 yrs</th><th>Typical yearly change</th></tr>` +
+      `<tr><th></th><th colspan="3" style="text-align:right">${metric() ? "m" : "ft & in"} vs ${baseLbl}</th></tr></thead><tbody>` +
+      P.longTerm.map((r) => `<tr><td>${r.year}</td><td>${cell(r.trendAll)}</td><td>${cell(r.trend10)}</td><td>${cell(r.typical)}</td></tr>`).join("") +
+      `</tbody>`;
+  }
+
+  // ================================================================ header, footer, download
+  function headerAndFooter() {
+    const sn = shortName(S);
+    $("title").textContent = `${sn} water levels`;
+    document.title = `${sn} Water Levels`;
+    $("subtitle").textContent = `Station ${S.code} · ${titleCase(S.name)}${S.prov ? ", " + S.prov : ""}`;
+    $("map-link").href = `https://wateroffice.ec.gc.ca/map/index_e.html?type=historical&target_station=${S.code}`;
+    $("ov-wrap").hidden = isMuriel(); $("st-home").hidden = isMuriel();
+    $("ov-chk").checked = overlay;
+    const appr = S.approvedUntil != null ? `Approved historical data (<a href="https://api.weather.gc.ca/collections/hydrometric-daily-mean">HYDAT</a>) through ${fmtDay(S.approvedUntil)}; ` : "No approved historical data; ";
+    const rt = S.realtime18
+      ? `after that, provisional <a href="https://wateroffice.ec.gc.ca/report/real_time_e.html?stn=${S.code}">real-time data</a> (about the last 18 months), which may still be revised. `
+      : S.rtFrom != null ? `provisional real-time data from ${fmtDay(S.rtFrom)} (the last ~30 days available to this page). ` : "";
+    const gap = !S.realtime18 && S.rtFrom != null && S.approvedUntil != null && S.rtFrom - S.approvedUntil > 3
+      ? `Values between ${fmtDay(S.approvedUntil)} and ${fmtDay(S.rtFrom)} are interpolated (a straight line), so treat recent changes for this station with care. ` : "";
+    $("footer").innerHTML =
+      `Data: Environment and Climate Change Canada, Water Survey of Canada station ${S.code} (${esc(titleCase(S.name))}). ` + appr + rt + gap +
+      `Other gaps are filled by linear interpolation. ` +
+      (isMuriel() ? `Updated daily · last updated ${new Date(S.updated).toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" })}` : `Loaded live from Environment Canada just now.`);
+    $("download").innerHTML = isMuriel()
+      ? `<a href="data/muriel-lake-water-levels.xlsx" download>Download all data (Excel)</a>
+         <p>Charts, every daily reading, the 1st-of-month table, year-to-year and total changes (cm and inches), and the July 1 projection.</p>`
+      : `<button id="dl-csv">Download ${esc(sn)} data (CSV)</button>
+         <p>Every daily level for station ${S.code}, with change since the first reading. (The full Excel workbook is for Muriel Lake.)</p>`;
+    if (!isMuriel()) $("dl-csv").onclick = downloadCsv;
+    if (gap) setStatus(`Note: ${gap}`, false);
+  }
+  function downloadCsv() {
+    const lines = ["Date,Level (m),vs first reading (m),vs first reading (ft),Source"];
+    for (let i = 0; i < S.t.length; i++) {
+      const d = S.v[i] - S.v[0];
+      lines.push(`${iso(S.t[i])},${S.v[i].toFixed(3)},${d.toFixed(3)},${(d / M_PER_FT).toFixed(3)},${S.p[i] ? "Provisional (real-time)" : "Approved (HYDAT)"}`);
+    }
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([lines.join("\n")], { type: "text/csv" }));
+    a.download = `${S.code}-water-levels.csv`; document.body.appendChild(a); a.click(); a.remove();
+  }
+
+  // ================================================================ weather
   const WX_CODES = {
     0: ["Clear", "☀️"], 1: ["Mainly clear", "🌤️"], 2: ["Partly cloudy", "⛅"], 3: ["Cloudy", "☁️"],
     45: ["Fog", "🌫️"], 48: ["Freezing fog", "🌫️"],
-    51: ["Light drizzle", "🌦️"], 53: ["Drizzle", "🌦️"], 55: ["Heavy drizzle", "🌧️"],
-    56: ["Freezing drizzle", "🌧️"], 57: ["Freezing drizzle", "🌧️"],
-    61: ["Light rain", "🌦️"], 63: ["Rain", "🌧️"], 65: ["Heavy rain", "🌧️"],
-    66: ["Freezing rain", "🌧️"], 67: ["Freezing rain", "🌧️"],
+    51: ["Light drizzle", "🌦️"], 53: ["Drizzle", "🌦️"], 55: ["Heavy drizzle", "🌧️"], 56: ["Freezing drizzle", "🌧️"], 57: ["Freezing drizzle", "🌧️"],
+    61: ["Light rain", "🌦️"], 63: ["Rain", "🌧️"], 65: ["Heavy rain", "🌧️"], 66: ["Freezing rain", "🌧️"], 67: ["Freezing rain", "🌧️"],
     71: ["Light snow", "🌨️"], 73: ["Snow", "🌨️"], 75: ["Heavy snow", "❄️"], 77: ["Snow grains", "🌨️"],
-    80: ["Showers", "🌦️"], 81: ["Showers", "🌧️"], 82: ["Heavy showers", "🌧️"],
-    85: ["Snow showers", "🌨️"], 86: ["Heavy snow showers", "❄️"],
+    80: ["Showers", "🌦️"], 81: ["Showers", "🌧️"], 82: ["Heavy showers", "🌧️"], 85: ["Snow showers", "🌨️"], 86: ["Heavy snow showers", "❄️"],
     95: ["Thunderstorm", "⛈️"], 96: ["Thunderstorm, hail", "⛈️"], 99: ["Thunderstorm, hail", "⛈️"],
   };
-  const wxc = (code, night) => {
-    const [t, ic] = WX_CODES[code] || ["—", "🌡️"];
-    return [t, night && (code === 0 || code === 1) ? "🌙" : ic];
-  };
+  const wxc = (code, night) => { const [t, ic] = WX_CODES[code] || ["—", "🌡️"]; return [t, night && (code === 0 || code === 1) ? "🌙" : ic]; };
   const compass = (deg) => deg == null ? "" : ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][Math.round(deg / 45) % 8];
   const precip = (mm) => mm == null ? "–" : metric() ? `${mm.toFixed(1)} mm` : `${(mm / 25.4).toFixed(2)} in`;
   const deg = (c) => c == null ? "–" : `${Math.round(c)}°`;
-
-  const wxUrl = "https://api.open-meteo.com/v1/forecast?" + new URLSearchParams({
-    latitude: 54.1446, longitude: -110.744, timezone: "America/Edmonton", forecast_days: 7,
-    current: "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,is_day,wind_speed_10m,wind_direction_10m,wind_gusts_10m",
-    daily: "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max,wind_direction_10m_dominant",
-  });
-  const wxLoad = fetch(wxUrl).then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
-    .then(j => { WX = j; }).catch(e => { console.error("forecast", e); wxFailed = true; });
-
+  let WX = null, wxFor = null, wxFailed = false;
+  function loadWeather() {
+    const key = `${S.lat},${S.lon}`; if (wxFor === key) return; wxFor = key; WX = null; wxFailed = false;
+    $("wx-title").textContent = `Weather at ${shortName(S)}`;
+    $("wx-sub").textContent = `Forecast for the station’s location (${S.lat.toFixed(2)}°, ${S.lon.toFixed(2)}°)`;
+    $("wx-body").innerHTML = '<p class="note" style="margin-top:12px">Loading forecast…</p>';
+    const url = "https://api.open-meteo.com/v1/forecast?" + new URLSearchParams({
+      latitude: S.lat, longitude: S.lon, timezone: "auto", forecast_days: 7,
+      current: "temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,is_day,wind_speed_10m,wind_direction_10m,wind_gusts_10m",
+      daily: "weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max,wind_direction_10m_dominant",
+    });
+    fetch(url).then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then((j) => { if (wxFor === key) { WX = j; safe(renderWx); } })
+      .catch((e) => { console.error("forecast", e); if (wxFor === key) { wxFailed = true; safe(renderWx); } });
+  }
   function renderWx() {
-    const box = document.getElementById("wx-body");
+    const box = $("wx-body");
     if (wxFailed) { box.innerHTML = '<p class="note" style="margin-top:12px">Forecast unavailable right now.</p>'; return; }
     if (!WX) return;
-    const c = WX.current, dl = WX.daily;
-    const [cond, icon] = wxc(c.weather_code, c.is_day === 0);
-    const dayName = (s, i) => i === 0 ? "Today" : i === 1 ? "Tmrw" :
-      new Date(s + "T12:00:00").toLocaleDateString("en-CA", { weekday: "short" });
+    const c = WX.current, dl = WX.daily, [cond, icon] = wxc(c.weather_code, c.is_day === 0);
+    const dayName = (s, i) => i === 0 ? "Today" : i === 1 ? "Tmrw" : new Date(s + "T12:00:00").toLocaleDateString("en-CA", { weekday: "short" });
     box.innerHTML = `
-      <div class="wx-now">
-        <div class="wx-icon">${icon}</div>
-        <div><div class="wx-temp">${deg(c.temperature_2m)}C</div><div class="wx-cond">${cond} · feels like ${deg(c.apparent_temperature)}</div></div>
-      </div>
+      <div class="wx-now"><div class="wx-icon">${icon}</div>
+        <div><div class="wx-temp">${deg(c.temperature_2m)}C</div><div class="wx-cond">${cond} · feels like ${deg(c.apparent_temperature)}</div></div></div>
       <div class="wx-facts">
         <div><span>Today</span><b>${deg(dl.temperature_2m_max[0])} / ${deg(dl.temperature_2m_min[0])}</b></div>
         <div><span>Chance of precip.</span><b>${dl.precipitation_probability_max[0] ?? "–"}%</b></div>
@@ -278,272 +882,183 @@
       }).join("")}</ul>
       <p class="wx-src" style="margin-top:6px">Updated ${new Date(c.time + ":00").toLocaleTimeString("en-CA", { hour: "numeric", minute: "2-digit" })} local time</p>`;
   }
-  wxLoad.then(() => safe(renderWx));
 
-  try {
-    D = await (await fetch("data/lake.json", { cache: "no-cache" })).json();
-  } catch (e) {
-    document.querySelector("main").insertAdjacentHTML("afterbegin", '<p class="error">Could not load the data file.</p>');
-    return;
-  }
-
-  const Q = D.quarterly, QN = D.quarter_names;
-  const MN = D.month_names, MQ = D.monthly;
-  let changeIdx = new Date().getMonth();          // current month by default
-  let showTotal = true, showYoy = true;
-
-  function layout(extra) {
-    const grid = css("--line"), text = css("--text"), muted = css("--muted");
-    return Object.assign({
-      margin: { l: 60, r: 20, t: 10, b: 40 },
-      paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
-      font: { family: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif", color: text, size: 12 },
-      xaxis: { gridcolor: grid, linecolor: grid, tickfont: { color: muted } },
-      yaxis: { gridcolor: grid, zerolinecolor: muted, tickfont: { color: muted } },
-      legend: { orientation: "h", y: -0.15 },
-      hovermode: "x unified",
-      hoverlabel: { bgcolor: css("--card"), bordercolor: css("--line"), font: { color: text, size: 12 } },
-    }, extra || {});
-  }
-  const cfg = { displaylogo: false, responsive: true, modeBarButtonsToRemove: ["lasso2d", "select2d", "autoScale2d"] };
-  const seriesColors = () => [css("--s1"), css("--s2"), css("--s3"), css("--s4")];
-
-  // ---- daily series as day numbers + absolute levels, for any-date lookups
-  const DAYNUM = D.daily.dates.map(s => Date.parse(s + "T00:00:00Z") / 864e5);
-  const DAYLVL = D.daily.rel_m.map(x => x + D.daily.base_level);
-  const dayNum = (y, m, d) => Date.UTC(y, m - 1, d) / 864e5;
-  // level on a date: measured if there's a reading, otherwise straight line between neighbours
-  function levelOn(y, m, d) {
-    const t = dayNum(y, m, d);
-    let lo = 0, hi = DAYNUM.length - 1;
-    if (t < DAYNUM[0] || t > DAYNUM[hi]) return null;
-    while (lo <= hi) {
-      const mid = (lo + hi) >> 1;
-      if (DAYNUM[mid] === t) return { v: DAYLVL[mid], measured: true };
-      if (DAYNUM[mid] < t) lo = mid + 1; else hi = mid - 1;
-    }
-    const f = (t - DAYNUM[hi]) / (DAYNUM[lo] - DAYNUM[hi]);
-    return { v: DAYLVL[hi] + (DAYLVL[lo] - DAYLVL[hi]) * f, measured: false };
-  }
-  function percentile(vals, p) {
-    const s = [...vals].sort((a, b) => a - b), pos = (s.length - 1) * p, i = Math.floor(pos);
-    return s[i] + ((s[Math.min(i + 1, s.length - 1)] - s[i]) * (pos - i));
-  }
-  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  const MDAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-  let pick = null; // null = default summary; otherwise {m, d}
-
-  function tiles() { pick ? tilesFor(pick.m, pick.d) : tilesDefault(); }
-
-  // Same four metrics as the default summary, for any month/day
-  function tilesFor(m, d) {
-    const lastT = DAYNUM[DAYNUM.length - 1];
-    const lastYear = new Date(lastT * 864e5).getUTCFullYear();
-    const Y = dayNum(lastYear, m, d) <= lastT ? lastYear : lastYear - 1;   // most recent occurrence
-    const now = levelOn(Y, m, d), prev = levelOn(Y - 1, m, d);
-    const firstYear = new Date(DAYNUM[0] * 864e5).getUTCFullYear();
-    const y0 = levelOn(firstYear, m, d) ? firstYear : firstYear + 1;
-    const first = levelOn(y0, m, d);
-    // Outlook: the next occurrence of this date, projected from the latest reading using how the lake
-    // moved between the same two calendar days in every past year
-    const lastDate = new Date(lastT * 864e5), lm = lastDate.getUTCMonth() + 1, ld = lastDate.getUTCDate();
-    const tY = dayNum(lastYear, m, d) > lastT ? lastYear : lastYear + 1;
-    const k = tY - lastYear;
-    const deltas = [];
-    for (let y = y0; dayNum(y + k, m, d) <= lastT; y++) {
-      const a = levelOn(y, lm, ld), b = levelOn(y + k, m, d);
-      if (a && b) deltas.push(b.v - a.v);
-    }
-    const anchor = DAYLVL[DAYLVL.length - 1];
-    const label = `${MONTHS[m - 1]} ${d}`;
-    const cm = (x) => Math.round(x * 1000) / 10;
-    const cls = (v) => v > 0 ? "up" : v < 0 ? "down" : "";
-    const yoy = prev ? cm(now.v - prev.v) : null, tot = cm(now.v - first.v);
-    const typ = cm(anchor + percentile(deltas, .5) - now.v);
-    const dry = cm(anchor + percentile(deltas, .1) - now.v), wet = cm(anchor + percentile(deltas, .9) - now.v);
-    const elev = metric() ? now.v.toFixed(3) + " m" : (now.v / 0.3048).toLocaleString("en-CA", { maximumFractionDigits: 1 }) + " ft";
-    document.getElementById("tiles").innerHTML = `
-      <div class="tile"><div class="k">Level on ${label}, ${Y}</div>
-        <div class="v">${elev}</div>
-        <div class="d">${now.measured ? "Measured" : "Interpolated"} · latest reading ${fmtDate(D.latest.date)}</div></div>
-      <div class="tile"><div class="k">${label}, ${Y} vs a year earlier</div>
-        <div class="v ${cls(yoy)}">${yoy === null ? "–" : fmtChg(yoy) + " " + chgUnit()}</div>
-        <div class="d">${yoy === null ? "No reading a year earlier" : yoy > 0 ? "The lake rose" : "The lake fell"}</div></div>
-      <div class="tile"><div class="k">${label}, ${Y} vs first ${label} on record</div>
-        <div class="v ${cls(tot)}">${fmtChg(tot)} ${chgUnit()}</div>
-        <div class="d">Record starts ${y0}</div></div>
-      <div class="tile"><div class="k">Typical outlook, ${label}, ${tY}</div>
-        <div class="v">${fmtChg(typ)} ${chgUnit()}</div>
-        <div class="d">vs ${label}, ${Y} (range ${fmtChg(dry)} to ${fmtChg(wet)}) · from the ${fmtDate(D.latest.date)} reading, ${deltas.length} yrs of history</div></div>`;
-  }
-
-  function tilesDefault() {
-    const last = Q[Q.length - 1];
-    const ci = Math.max(...last.level.map((v, j) => v !== null ? j : -1)); // latest quarterly date with a value
-    const yoy = last.yoy_cm[ci], tot = last.total_cm[ci];
-    const typical = D.projection.scenarios.find(s => s.percentile === 50);
-    const cls = (v) => v > 0 ? "up" : v < 0 ? "down" : "";
-    document.getElementById("tiles").innerHTML = `
-      <div class="tile"><div class="k">Latest reading</div>
-        <div class="v">${metric() ? D.latest.level.toFixed(3) + " m" : (D.latest.level / 0.3048).toLocaleString("en-CA", { maximumFractionDigits: 1 }) + " ft"}</div>
-        <div class="d">${fmtDate(D.latest.date)} · elevation above sea level${D.latest.source === "provisional" ? " · provisional" : ""}</div></div>
-      <div class="tile"><div class="k">${QN[ci]}, ${last.year} vs a year earlier</div>
-        <div class="v ${cls(yoy)}">${fmtChg(yoy)} ${chgUnit()}</div>
-        <div class="d">${yoy > 0 ? "The lake rose" : "The lake fell"}</div></div>
-      <div class="tile"><div class="k">${QN[ci]}, ${last.year} vs first ${QN[ci]} on record</div>
-        <div class="v ${cls(tot)}">${fmtChg(tot)} ${chgUnit()}</div>
-        <div class="d">Record starts ${Q.find(q => q.level[ci] !== null).year}</div></div>
-      <div class="tile"><div class="k">Typical outlook, July 1, ${D.projection.target.slice(0, 4)}</div>
-        <div class="v">${fmtChg(typical.vs_last_jul_cm)} ${chgUnit()}</div>
-        <div class="d">vs July 1, ${D.projection.last_july.year} (range ${fmtChg(D.projection.scenarios[1].vs_last_jul_cm)} to ${fmtChg(D.projection.scenarios[5].vs_last_jul_cm)})</div></div>`;
-  }
-
-  function dailyChart() {
-    const d = D.daily;
-    document.getElementById("daily-note").textContent =
-      `Level compared with the first reading (${fmtDate(d.base_date)}). Drag to zoom; double-click to reset.`;
-    Plotly.react("chart-daily", [{
-      x: d.dates, y: d.rel_m.map(lvl), type: "scattergl", mode: "lines",
-      line: { color: css("--s1"), width: 1.6 }, name: "Level",
-      hovertemplate: `%{y:${metric() ? ".3f" : ".1f"}} ${lvlUnit()}<extra></extra>`,
-    }], layout({ yaxis: Object.assign(layout().yaxis, { title: `Change (${lvlUnit()})` }), showlegend: false }), cfg);
-  }
-
-  function changeChart() {
-    const c = changeIdx, yrs = MQ.map(q => q.year);
-    const firstYear = (MQ.find(q => q.level[c] !== null) || {}).year;
-    document.getElementById("change-note").textContent =
-      `${MN[c]} 1 each year. Line: total change since the first ${MN[c]} 1 on record (${firstYear}). ` +
-      `Bars: change from ${MN[c]} 1 the year before; green = the lake rose.`;
-    const yoy = MQ.map(q => chg(q.yoy_cm[c]));
-    const both = showTotal && showYoy, traces = [];
-    if (showYoy) traces.push({ x: yrs, y: yoy, type: "bar", name: "vs year before", yaxis: both ? "y2" : "y",
-      marker: { color: yoy.map(v => v > 0 ? css("--up") : css("--down")), opacity: 0.75 },
-      hovertemplate: `vs year before: %{y:+.1f} ${chgUnit()}<extra></extra>` });
-    if (showTotal) traces.push({ x: yrs, y: MQ.map(q => chg(q.total_cm[c])), type: "scatter", mode: "lines+markers",
-      name: "Total change", line: { color: css("--s1"), width: 3 }, marker: { size: 4 },
-      hovertemplate: `Total: %{y:+.1f} ${chgUnit()}<extra></extra>` });
-    const extra = {
-      yaxis: Object.assign(layout().yaxis, { title: showTotal ? `Total change (${chgUnit()})` : `Change vs year before (${chgUnit()})` }),
-      margin: { l: 60, r: both ? 60 : 20, t: 10, b: 40 },
-    };
-    if (both) extra.yaxis2 = { title: `Year-to-year (${chgUnit()})`, overlaying: "y", side: "right", showgrid: false,
-                               zerolinecolor: css("--muted"), tickfont: { color: css("--muted") } };
-    Plotly.react("chart-change", traces, layout(extra), cfg);
-
-    const head = `<thead><tr><th>Year</th>${MN.map((n, i) => `<th class="${i === c ? "sel" : ""}">${n} 1</th>`).join("")}</tr></thead>`;
-    const body = [...MQ].reverse().map(q => `<tr><td>${q.year}</td>${q.yoy_cm.map((v, i) => {
-      const cls = [v > 0 ? "rise" : "", i === c ? "sel" : "", v !== null && v <= 0 && q.source[i] === "interpolated" ? "interp" : ""].join(" ").trim();
-      return `<td class="${cls}">${fmtChg(v)}</td>`;
-    }).join("")}</tr>`).join("");
-    document.getElementById("table-change").innerHTML = head + `<tbody>${body}</tbody>`;
-  }
-
-  function projection() {
-    const P = D.projection, base = D.quarterly_base.level;
-    document.getElementById("proj-note").textContent =
-      `Starting from the ${fmtDate(P.anchor.date)} reading, this adds how much the lake changed between that date and the next July 1 in each of ${P.years_of_history} past years. It’s statistics from past years, not a weather forecast; winter snowpack matters most.`;
-    document.getElementById("table-scen").innerHTML =
-      `<thead><tr><th>July 1, ${P.target.slice(0, 4)}</th><th>Percentile</th><th>vs ${fmtDate(P.anchor.date)} (${chgUnit()})</th><th>vs July 1, ${P.last_july.year} (${chgUnit()})</th></tr></thead><tbody>` +
-      P.scenarios.map(s => `<tr class="${s.percentile === 50 ? "hl" : ""}"><td>${s.name}</td><td>${s.percentile}%</td><td>${fmtChg(s.change_cm)}</td><td>${fmtChg(s.vs_last_jul_cm)}</td></tr>`).join("") + "</tbody>";
-
-    const jul = Q.filter(q => q.level[2] !== null);
-    const rel = (m) => lvl(m - base);
-    const LT = P.long_term;
-    const lastY = P.last_july.year, lastV = P.last_july.level;
-    const join = (key) => ({ x: [lastY, ...LT.map(r => r.year)], y: [rel(lastV), ...LT.map(r => rel(r[key]))] });
-    const typ = P.scenarios.find(s => s.percentile === 50), dry = P.scenarios[1], wet = P.scenarios[5];
-    const ty = +P.target.slice(0, 4);
-    const fmt = metric() ? ".3f" : ".1f";
-    Plotly.react("chart-proj", [
-      { x: jul.map(q => q.year), y: jul.map(q => rel(q.level[2])), name: "Actual July 1", mode: "lines+markers",
-        line: { color: css("--s1"), width: 3 }, marker: { size: 4 }, hovertemplate: `Actual: %{y:${fmt}} ${lvlUnit()}<extra></extra>` },
-      Object.assign(join("trend_10"), { name: "Trend, last 10 yrs", mode: "lines", line: { color: css("--s4"), dash: "dash", width: 2 },
-        hovertemplate: `10-yr trend: %{y:${fmt}} ${lvlUnit()}<extra></extra>` }),
-      Object.assign(join("typical"), { name: "Typical yearly change", mode: "lines", line: { color: css("--muted"), dash: "dash", width: 2 },
-        hovertemplate: `Typical change: %{y:${fmt}} ${lvlUnit()}<extra></extra>` }),
-      { x: [ty], y: [rel(typ.level)], name: `Next July 1 (dry–wet range)`, mode: "markers",
-        marker: { color: css("--s3"), size: 10, symbol: "diamond" },
-        error_y: { type: "data", symmetric: false, array: [rel(wet.level) - rel(typ.level)], arrayminus: [rel(typ.level) - rel(dry.level)], color: css("--s3") },
-        hovertemplate: `Typical: %{y:${fmt}} ${lvlUnit()}<extra></extra>` },
-    ], layout({ yaxis: Object.assign(layout().yaxis, { title: `vs ${fmtDate(D.quarterly_base.date)} (${lvlUnit()})` }) }), cfg);
-
-    document.getElementById("table-long").innerHTML =
-      `<thead><tr><th>July 1</th><th>Trend, all years (${lvlUnit()})</th><th>Trend, last 10 yrs (${lvlUnit()})</th><th>Typical yearly change (${lvlUnit()})</th></tr></thead><tbody>` +
-      LT.map(r => `<tr><td>${r.year}</td><td>${fmtLvl(r.trend_all - base)}</td><td>${fmtLvl(r.trend_10 - base)}</td><td>${fmtLvl(r.typical - base)}</td></tr>`).join("") +
-      `</tbody>`;
-  }
-
-  function footer() {
-    document.getElementById("footer").innerHTML =
-      `Data: Environment and Climate Change Canada, Water Survey of Canada station ${D.station} (${D.station_name}). ` +
-      `Approved historical data (<a href="https://api.weather.gc.ca/collections/hydrometric-daily-mean">HYDAT</a>) through ${fmtDate(D.approved_until)}; ` +
-      `after that, provisional <a href="https://wateroffice.ec.gc.ca/report/real_time_e.html?stn=${D.station}">real-time data</a>, which may still be revised. ` +
-      `Gaps are filled by linear interpolation. Updated weekly · last updated ${new Date(D.updated).toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" })}`;
-  }
-
+  // ================================================================ rendering
   function tabs() {
-    document.getElementById("change-tabs").innerHTML = MN.map((n, i) =>
-      `<button data-i="${i}" class="${i === changeIdx ? "on" : ""}">${n} 1</button>`).join("");
+    $("change-tabs").innerHTML = MONTHS.map((n, i) => `<button data-i="${i}" class="${i === changeIdx ? "on" : ""}">${n} 1</button>`).join("");
   }
-  document.getElementById("change-tabs").addEventListener("click", (e) => {
-    const b = e.target.closest("button"); if (!b) return;
-    changeIdx = +b.dataset.i; tabs(); changeChart();
+  function syncPicker() {
+    const [, lm, ld] = ymd(S.last), m = pick ? pick.m : lm, d = pick ? pick.d : ld;
+    $("pick-month").value = String(m); fillDays(); $("pick-day").value = String(d);
+    $("pick-reset").disabled = !pick;
+  }
+  function renderAll() {
+    $("u-metric").classList.toggle("on", metric()); $("u-imperial").classList.toggle("on", !metric());
+    safe(headerAndFooter); safe(syncPicker); safe(tiles); safe(compare);
+    safe(dailyChart, "chart-daily"); safe(tabs); safe(changeChart, "chart-change");
+    safe(projectionView, "chart-proj"); safe(renderWx);
+  }
+  function setStatus(msg, err) { $("st-status").textContent = msg || ""; $("st-status").classList.toggle("err", !!err); }
+
+  async function selectStation(code, push = true) {
+    code = code.toUpperCase().trim();
+    setStatus(`Loading station ${code}…`);
+    try {
+      const X = code === MURIEL ? (MU || (MU = await loadMuriel())) : await loadStation(code);
+      if (code === MURIEL) MUM = MUM || monthlyTable(MU);
+      S = X; M = code === MURIEL ? MUM : monthlyTable(S); P = projection(M);
+      pick = null; dailyFrom = null; changeFrom = null; changeIdx = ymd(S.last)[1] - 1;
+      cmpB = S.last; cmpA = Math.max(S.first, dn(ymd(S.last)[0] - 1, ymd(S.last)[1], ymd(S.last)[2]));
+      $("cmp-a").min = $("cmp-b").min = iso(S.first); $("cmp-a").max = $("cmp-b").max = iso(S.last);
+      $("cmp-a").value = iso(cmpA); $("cmp-b").value = iso(cmpB);
+      $("st-input").value = "";
+      setStatus("");
+      if (push) {
+        const u = new URL(location.href);
+        if (code === MURIEL) u.searchParams.delete("station"); else u.searchParams.set("station", code);
+        history.replaceState(null, "", u);
+      }
+      renderAll(); loadWeather();
+      if (!MU) loadMuriel().then((x) => { MU = x; MUM = monthlyTable(MU); if (showOverlay()) { safe(dailyChart, "chart-daily"); safe(changeChart, "chart-change"); } }).catch(() => {});
+    } catch (e) {
+      console.error(e);
+      setStatus(e.message && /records|found/.test(e.message) ? e.message : `Couldn’t load station ${code} (${e.message}).`, true);
+    }
+  }
+
+  // ================================================================ station search
+  const norm = (s) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  let hits = [], act = -1;
+  async function search(q) {
+    const list = $("st-list"); q = q.trim();
+    if (q.length < 2) { list.hidden = true; return; }
+    await loadStations();
+    if (STATIONS) {
+      const words = norm(q).split(/\s+/), qq = q.toUpperCase();
+      hits = STATIONS.filter((s) => s[0].startsWith(qq) || words.every((w) => norm(s[1]).includes(w)))
+        .sort((a, b) => (b[0] === qq) - (a[0] === qq) || b[5] - a[5] || b[6] - a[6] || a[1].localeCompare(b[1])).slice(0, 40);
+    } else {
+      try {
+        const j = await (await fetch(`${API}hydrometric-stations/items?f=json&limit=30&q=${encodeURIComponent(q)}`)).json();
+        hits = j.features.map((f) => [f.properties.STATION_NUMBER, f.properties.STATION_NAME, f.properties.PROV_TERR_STATE_LOC, 0, 0, f.properties.STATUS_EN === "Active" ? 1 : 0, f.properties.REAL_TIME]);
+      } catch (e) { hits = []; }
+    }
+    act = -1;
+    list.innerHTML = hits.length ? hits.map((s, i) => `<li role="option" data-i="${i}"><span class="code">${s[0]}</span>${esc(titleCase(s[1]))}
+        <div class="meta">${s[2]}${s[5] ? "" : " · discontinued"}${s[6] ? " · real-time" : ""}</div></li>`).join("")
+      : `<li class="meta" style="cursor:default">No stations match “${esc(q)}”</li>`;
+    list.hidden = false;
+  }
+  $("st-input").addEventListener("input", (e) => search(e.target.value));
+  $("st-input").addEventListener("focus", () => { loadStations(); if ($("st-input").value.trim().length >= 2) search($("st-input").value); });
+  $("st-input").addEventListener("keydown", (e) => {
+    const items = [...$("st-list").querySelectorAll("li[data-i]")];
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault(); if (!items.length) return;
+      act = (act + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+      items.forEach((li, i) => li.classList.toggle("act", i === act)); items[act].scrollIntoView({ block: "nearest" });
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const v = $("st-input").value.trim().toUpperCase();
+      const choice = act >= 0 ? hits[act] : hits[0];
+      $("st-list").hidden = true;
+      if (/^\d\d[A-Z]{2}\d{3}$/.test(v)) selectStation(v); else if (choice) selectStation(choice[0]);
+    } else if (e.key === "Escape") { $("st-list").hidden = true; }
   });
-  // line / bars toggles (at least one stays on)
+  $("st-list").addEventListener("mousedown", (e) => {
+    const li = e.target.closest("li[data-i]"); if (!li) return;
+    e.preventDefault(); $("st-list").hidden = true; selectStation(hits[+li.dataset.i][0]);
+  });
+  $("st-input").addEventListener("blur", () => setTimeout(() => { $("st-list").hidden = true; }, 150));
+  $("st-home").addEventListener("click", () => selectStation(MURIEL));
+  $("ov-chk").addEventListener("change", (e) => { overlay = e.target.checked; safe(dailyChart, "chart-daily"); safe(changeChart, "chart-change"); });
+
+  // ================================================================ controls
+  $("pick-month").innerHTML = MONTHS.map((n, i) => `<option value="${i + 1}">${n}</option>`).join("");
+  function fillDays() {
+    const m = +$("pick-month").value || 1, keep = $("pick-day").value, n = MDAYS[m - 1];
+    $("pick-day").innerHTML = Array.from({ length: n }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join("");
+    $("pick-day").value = keep && +keep <= n ? keep : String(Math.min(+keep || 1, n));
+  }
+  function onPick() {
+    const [, lm, ld] = ymd(S.last), m = +$("pick-month").value, d = +$("pick-day").value;
+    pick = (m === lm && d === ld) ? null : { m, d };
+    $("pick-reset").disabled = !pick; safe(tiles);
+  }
+  $("pick-month").addEventListener("change", () => { fillDays(); onPick(); });
+  $("pick-day").addEventListener("change", onPick);
+  $("pick-reset").addEventListener("click", () => { pick = null; syncPicker(); safe(tiles); });
+  $("tiles").addEventListener("change", (e) => {
+    if (e.target.id === "lookback") { lookback = +e.target.value; localSet("lookback", lookback); safe(tiles); }
+  });
+
+  for (const [id, set] of [["cmp-a", (t) => { cmpA = t; }], ["cmp-b", (t) => { cmpB = t; }]]) {
+    $(id).addEventListener("change", (e) => { if (e.target.value) { set(fromIso(e.target.value)); safe(compare); } });
+  }
+
+  $("d-from").addEventListener("change", (e) => { if (e.target.value) setDailyFrom(fromIso(e.target.value)); });
+  $("d-range").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-yrs]"); if (!b) return;
+    const yrs = +b.dataset.yrs, [ly, lm, ld] = ymd(S.last);
+    setDailyFrom(yrs ? dn(ly - yrs, lm, ld) : null); b.classList.add("on");
+  });
+  $("c-from").addEventListener("change", (e) => setChangeFrom(+e.target.value));
+  $("c-range").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-yrs]"); if (!b) return;
+    const yrs = +b.dataset.yrs, lastY = M.rows.filter((q) => q.level[changeIdx] != null).pop().year;
+    setChangeFrom(yrs ? lastY - yrs : null); b.classList.add("on");
+  });
+
+  $("change-tabs").addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    changeIdx = +b.dataset.i; tabs(); safe(changeChart, "chart-change");
+  });
   for (const [id, key] of [["show-total", "total"], ["show-yoy", "yoy"]]) {
-    document.getElementById(id).addEventListener("click", () => {
+    $(id).addEventListener("click", () => {
       if (key === "total" && !(showTotal && !showYoy)) showTotal = !showTotal;
       if (key === "yoy" && !(showYoy && !showTotal)) showYoy = !showYoy;
-      document.getElementById("show-total").classList.toggle("on", showTotal);
-      document.getElementById("show-yoy").classList.toggle("on", showYoy);
+      $("show-total").classList.toggle("on", showTotal); $("show-yoy").classList.toggle("on", showYoy);
       safe(changeChart, "chart-change");
     });
   }
-
-  function safe(fn, chartId) {
-    try { fn(); } catch (e) {
-      console.error(e);
-      if (chartId) document.getElementById(chartId).innerHTML =
-        '<p class="error">This chart could not be drawn (' + (window.Plotly ? e.message : "the charting library did not load") + ').</p>';
-    }
-  }
-  function renderAll() {
-    document.getElementById("u-metric").classList.toggle("on", metric());
-    document.getElementById("u-imperial").classList.toggle("on", !metric());
-    safe(tiles); safe(dailyChart, "chart-daily"); safe(tabs);
-    safe(changeChart, "chart-change"); safe(projection, "chart-proj"); safe(footer); safe(renderWx);
-  }
   for (const [id, u] of [["u-metric", "metric"], ["u-imperial", "imperial"]]) {
-    document.getElementById(id).addEventListener("click", () => { units = u; localSet("units", u); renderAll(); });
+    $(id).addEventListener("click", () => { units = u; localSet("units", u); renderAll(); });
   }
-
-  // theme buttons
-  document.querySelectorAll("[data-theme-btn]").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll("[data-theme-btn]").forEach((b) => b.addEventListener("click", () => {
     theme = b.dataset.themeBtn; localSet("theme", theme); applyTheme(); renderAll();
   }));
+  // phone/desktop switch: redraw charts with the right interaction mode
+  let wasNarrow = narrow();
+  window.addEventListener("resize", () => { if (narrow() !== wasNarrow) { wasNarrow = narrow(); renderAll(); } });
 
-  // summary day picker: blank = default summary
-  const selM = document.getElementById("pick-month"), selD = document.getElementById("pick-day"),
-        btnR = document.getElementById("pick-reset");
-  selM.innerHTML = `<option value="">Month</option>` + MONTHS.map((n, i) => `<option value="${i + 1}">${n}</option>`).join("");
-  function fillDays(keep) {
-    const m = +selM.value, n = m ? MDAYS[m - 1] : 31;
-    selD.innerHTML = `<option value="">Day</option>` +
-      Array.from({ length: n }, (_, i) => `<option value="${i + 1}">${i + 1}</option>`).join("");
-    if (keep && +keep <= n) selD.value = keep;
+  // desktop zoom/pan on the charts keeps the From controls and the readouts in step
+  function hookZoom() {
+    const gd = $("chart-daily"), gc = $("chart-change");
+    if (gd.on && !gd._hooked) {
+      gd._hooked = true;
+      gd.on("plotly_relayout", (ev) => {
+        if (quiet) return;
+        const r0 = ev["xaxis.range[0]"] || (ev["xaxis.range"] && ev["xaxis.range"][0]);
+        if (r0) { const t = Math.max(fromIso(r0), S.first); dailyFrom = t; $("d-from").value = iso(t); dailyReadout(t); }
+        else if (ev["xaxis.autorange"]) { dailyFrom = null; $("d-from").value = iso(S.first); dailyReadout(S.first); }
+      });
+    }
+    if (gc.on && !gc._hooked) {
+      gc._hooked = true;
+      gc.on("plotly_relayout", (ev) => {
+        if (quiet) return;
+        const r0 = ev["xaxis.range[0]"] ?? (ev["xaxis.range"] && ev["xaxis.range"][0]);
+        if (r0 != null) { const y = Math.ceil(+r0); changeFrom = y; $("c-from").value = String(y); changeReadout(y); }
+        else if (ev["xaxis.autorange"]) { changeFrom = null; changeReadout(-Infinity); }
+      });
+    }
   }
-  function onPick() {
-    pick = selM.value && selD.value ? { m: +selM.value, d: +selD.value } : null;
-    btnR.disabled = !pick && !selM.value && !selD.value;
-    safe(tiles);
-  }
-  selM.addEventListener("change", () => { fillDays(selD.value); onPick(); });
-  selD.addEventListener("change", onPick);
-  btnR.addEventListener("click", () => { selM.value = ""; fillDays(); onPick(); });
-  fillDays(); btnR.disabled = true;
 
-  renderAll();
+  // ================================================================ go
+  const want = (new URLSearchParams(location.search).get("station") || MURIEL).toUpperCase();
+  await selectStation(want, false);
+  if (!S && want !== MURIEL) await selectStation(MURIEL);
+  hookZoom();
 })();
 </script>
 </body>

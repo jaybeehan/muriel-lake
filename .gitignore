@@ -1,3 +1,4 @@
 __pycache__/
 *.pyc
-site/data/*.xlsx
+# built by the daily GitHub Action, published with the page (not stored in the repo)
+site/data/
