@@ -157,6 +157,7 @@
     <div class="controls">
       <div class="toggle" role="group" aria-label="Units">
         <button id="u-metric" class="on">Metric</button>
+        <button id="u-inches">Inches</button>
         <button id="u-imperial">Feet &amp; inches</button>
       </div>
       <div class="toggle" role="group" aria-label="Theme">
@@ -306,13 +307,18 @@
   const r3 = (x) => Math.round(x * 1000) / 1000;
 
   // ================================================================ units
-  let units = localGet("units") === "imperial" ? "imperial" : "metric";
+  // "metric", "inches" (inches only) or "imperial" (feet & inches)
+  let units = ["inches", "imperial"].includes(localGet("units")) ? localGet("units") : "metric";
   const metric = () => units === "metric";
+  const inchesOnly = () => units === "inches";
   const MINUS = "−";
   const sgn = (x, plus) => x < 0 ? MINUS : (plus && x > 0 ? "+" : "");
-  // metres -> "1 ft 9.4 in"
-  function ftin(m, plus) {
-    let inch = Math.abs(m) * 100 / CM_PER_IN, ft = Math.floor(inch / 12), rem = Math.round((inch - ft * 12) * 10) / 10;
+  // metres -> "1 ft 9.4 in" (or "21.4 in" in inches-only mode, unless feet are forced)
+  function ftin(m, plus, forceFeet) {
+    let inch = Math.abs(m) * 100 / CM_PER_IN;
+    if (inchesOnly() && !forceFeet)
+      return sgn(m, plus) + `${inch.toLocaleString("en-CA", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} in`;
+    let ft = Math.floor(inch / 12), rem = Math.round((inch - ft * 12) * 10) / 10;
     if (rem >= 12) { ft += 1; rem = 0; }
     return sgn(m, plus) + (ft ? `${ft.toLocaleString("en-CA")} ft ` : "") + `${rem.toFixed(1)} in`;
   }
@@ -324,12 +330,14 @@
     return a < 1 ? `${sgn(m, plus)}${(a * 100).toFixed(1)} cm` : `${sgn(m, plus)}${a.toFixed(2)} m`;
   }
   // a change for table cells: cm in metric, ft & in otherwise
-  const fmtCell = (m) => m == null ? "" : metric() ? `${sgn(m, true)}${(Math.abs(m) * 100).toFixed(1)}` : ftin(m, true);
-  const cellUnit = () => metric() ? "cm" : "ft & in";
-  const fmtElev = (m) => metric() ? `${m.toFixed(3)} m` : ftin(m);
+  const fmtCell = (m) => m == null ? "" : metric() ? `${sgn(m, true)}${(Math.abs(m) * 100).toFixed(1)}`
+    : inchesOnly() ? `${sgn(m, true)}${(Math.abs(m) * 100 / CM_PER_IN).toFixed(1)}` : ftin(m, true);
+  const cellUnit = () => metric() ? "cm" : inchesOnly() ? "in" : "ft & in";
+  const fmtElev = (m) => metric() ? `${m.toFixed(3)} m` : ftin(m, false, true);   // elevation always in ft & in
   // chart axis values
   const AX = {
-    big: { m: (x) => x, unit: () => metric() ? "m" : "ft", conv: (x) => metric() ? x : x / M_PER_FT, fmt: () => metric() ? ".2f" : ".1f" },
+    big: { unit: () => metric() ? "m" : inchesOnly() ? "in" : "ft",
+           conv: (x) => metric() ? x : inchesOnly() ? x * 100 / CM_PER_IN : x / M_PER_FT, fmt: () => metric() ? ".2f" : ".1f" },
     small: { unit: () => metric() ? "cm" : "in", conv: (x) => metric() ? x * 100 : x * 100 / CM_PER_IN, fmt: () => ".1f" },
   };
 
@@ -798,7 +806,7 @@
     const cell = (v) => metric() ? `${sgn(v - base, true)}${Math.abs(v - base).toFixed(3)}` : ftin(v - base, true);
     $("table-long").innerHTML =
       `<thead><tr><th>July 1</th><th>Trend, all years</th><th>Trend, last 10 yrs</th><th>Typical yearly change</th></tr>` +
-      `<tr><th></th><th colspan="3" style="text-align:right">${metric() ? "m" : "ft & in"} vs ${baseLbl}</th></tr></thead><tbody>` +
+      `<tr><th></th><th colspan="3" style="text-align:right">${metric() ? "m" : inchesOnly() ? "in" : "ft & in"} vs ${baseLbl}</th></tr></thead><tbody>` +
       P.longTerm.map((r) => `<tr><td>${r.year}</td><td>${cell(r.trendAll)}</td><td>${cell(r.trend10)}</td><td>${cell(r.typical)}</td></tr>`).join("") +
       `</tbody>`;
   }
@@ -906,7 +914,8 @@
     $("pick-reset").disabled = !pick;
   }
   function renderAll() {
-    $("u-metric").classList.toggle("on", metric()); $("u-imperial").classList.toggle("on", !metric());
+    $("u-metric").classList.toggle("on", metric()); $("u-inches").classList.toggle("on", inchesOnly());
+    $("u-imperial").classList.toggle("on", units === "imperial");
     safe(headerAndFooter); safe(syncPicker); safe(tiles); safe(compare);
     safe(dailyChart, "chart-daily"); safe(tabs); safe(changeChart, "chart-change");
     safe(projectionView, "chart-proj"); safe(renderWx);
@@ -1051,7 +1060,7 @@
       safe(changeChart, "chart-change");
     });
   }
-  for (const [id, u] of [["u-metric", "metric"], ["u-imperial", "imperial"]]) {
+  for (const [id, u] of [["u-metric", "metric"], ["u-inches", "inches"], ["u-imperial", "imperial"]]) {
     $(id).addEventListener("click", () => { units = u; localSet("units", u); renderAll(); });
   }
   document.querySelectorAll("[data-theme-btn]").forEach((b) => b.addEventListener("click", () => {
