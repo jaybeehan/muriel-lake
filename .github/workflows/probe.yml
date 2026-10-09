@@ -1,0 +1,34 @@
+name: Probe data sources (temporary)
+
+on:
+  push:
+    paths: [".github/workflows/probe.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: CORS headers
+        run: |
+          for u in \
+            "https://api.weather.gc.ca/collections/hydrometric-daily-mean/items?STATION_NUMBER=05EA001&f=csv&limit=2&properties=DATE,LEVEL&skipGeometry=true" \
+            "https://api.weather.gc.ca/collections/hydrometric-realtime/items?STATION_NUMBER=06AC007&f=csv&limit=2&properties=DATETIME,LEVEL&skipGeometry=true" \
+            "https://wateroffice.ec.gc.ca/services/real_time_data/csv/inline?stations[]=06AC007&parameters[]=46&start_date=2026-09-01%2000:00:00&end_date=2026-09-01%2001:00:00" \
+            "https://api.open-meteo.com/v1/forecast?latitude=54.14&longitude=-110.74&current=temperature_2m" ; do
+            echo "=== $u"
+            curl -s -D - -o /tmp/body -H "Origin: https://jaybeehan.github.io" "$u" | grep -iE "^HTTP|access-control|content-type"
+            head -c 300 /tmp/body; echo
+          done
+      - name: Station list fields
+        run: |
+          curl -s "https://api.weather.gc.ca/collections/hydrometric-stations/items?STATION_NUMBER=06AC007&f=json" | head -c 2500; echo
+          echo "=== count"
+          curl -s "https://api.weather.gc.ca/collections/hydrometric-stations/items?f=json&limit=1&resulttype=hits" | head -c 600; echo
+          echo "=== csv sample"
+          curl -s "https://api.weather.gc.ca/collections/hydrometric-stations/items?f=csv&limit=3" | head -c 1500; echo
+          echo "=== q search"
+          curl -s "https://api.weather.gc.ca/collections/hydrometric-stations/items?f=json&limit=3&q=pigeon" | head -c 800; echo
